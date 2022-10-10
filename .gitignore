@@ -5,7 +5,7 @@
 #############
 ## LaskaKit folders
 #############
-.input
+input/
 
 ## AVR Development
 *.eep
