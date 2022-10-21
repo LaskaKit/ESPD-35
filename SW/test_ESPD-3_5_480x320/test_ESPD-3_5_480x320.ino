@@ -1,21 +1,4 @@
-// Demo based on:
-// UTFT_Demo by Henning Karlsen
-// web: http://www.henningkarlsen.com/electronics
-/*
-
- The delay between tests is set to 0. The tests run so fast you will need to
- change the WAIT value below to see what is being plotted!
- 
- This sketch uses the GLCD and font 2 only.
-
- Make sure all the required fonts are loaded by editing the
- User_Setup.h file in the TFT_eSPI library folder.
-
-  #########################################################################
-  ###### DON'T FORGET TO UPDATE THE User_Setup.h FILE IN THE LIBRARY ######
-  ######            TO SELECT THE FONTS YOU USE, SEE ABOVE           ######
-  #########################################################################
- */
+// Demo software pro LaskaKit ESPD-3,5" 320x480, ILI9488
 
 // Delay between demo pages
 #define WAIT 0 // Delay between tests, set to 0 to demo speed, 2000 to see what it does!
