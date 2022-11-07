@@ -42,8 +42,8 @@ void loop() {
   if(myCTP.newTouch)                                                    // If there is a new touch....
   {
     touch = myCTP.read();                                               // The read() function returns the 'lastTouch' TouchRecord which is saved into the local variable 'touch'
-    //printTouchRecord(touch);                                            // We use a custom function to print the touch info to the serial monitor
-    printTouchRecord(myCTP.lastTouch);                                  // This line demonstrates another way that you can access the 'lastTouch' data
+    printTouchRecord(touch);                                            // We use a custom function to print the touch info to the serial monitor
+    //printTouchRecord(myCTP.lastTouch);                                  // This line demonstrates another way that you can access the 'lastTouch' data
   }
 }
 
