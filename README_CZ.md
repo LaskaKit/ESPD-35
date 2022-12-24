@@ -21,6 +21,7 @@ Na desce jsme nechali i místo pro [580mAh Lipol akumulátor](https://www.laskak
 K měření napětí akumulátoru jsme osadili i napěťový dělič připojený k akumulátoru a GPIO34 - nezapomeň propájet pájecí most. 
 
 Připravili jsme několik vzorových kódů: https://github.com/LaskaKit/ESPD-35/tree/main/SW
+
 A také krabičku k vytištěnní na 3D tiskárně: https://github.com/LaskaKit/ESPD-35/tree/main/3D
 
 ![ESPD-3.5](https://github.com/LaskaKit/ESPD-35/blob/main/img/001.jpg)
