@@ -8,6 +8,8 @@ The 3.5" display has a resolution of 480x320 px and the number of colors of indi
 
 In addition to the SD card slot, the board has a module with ESP32 supporting Wi-Fi and Bluetooth connectivity, a built-in programmer with CH9102, a charging circuit for a battery with a charging current of 400mA, 2x uŠup connector for connecting sensors (for example [SHT40 ](https://www.laskakit.cz/laskakit-sht40-senzor-teploty-a-vlhkosti-vzduchu/)- temperature/humidity, [SCD41 ](https://www.laskakit.cz/laskakit-scd41-senzor-co2--teploty-a-vlhkosti-vzduchu/)- CO2/temperature/humidity or [BME280](https://www.laskakit.cz/arduino-senzor-tlaku--teploty-a-vlhkosti-bme280/) - pressure/temperature/humidity).
 
+![ESPD-3.5 pinout](https://github.com/LaskaKit/ESPD-35/blob/main/img/ESPD-3.5-pinout.jpg)
+
 The ESPD3.5" contains two buttons - RESET and Power ON/OFF - the button that turns the ESPD3.5" off (long press) and on (short press). The button is connected to GPIO35. You might also appreciate the 2x13 pin cavity rail where we connected the remaining ESP32 GPIO.
 
 The USB-C connector is used for both programming and charging the Lipolka. We also left a [place on the board for a 580mAh Lipol battery](https://www.laskakit.cz/geb-lipol-baterie-801454-580mah-3-7v-jst-ph-2-0/) - so it won't get in the way anywhere else.
