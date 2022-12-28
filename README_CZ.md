@@ -12,6 +12,8 @@ Kromě slotu na SD kartu má deska samozřejmě modul s ESP32 podporující Wi-F
 proudem 400mA, 2x konektor uŠup pro připojení čidel (například [SHT40](https://www.laskakit.cz/laskakit-sht40-senzor-teploty-a-vlhkosti-vzduchu/) - teplota/vlhkost, 
 [SCD41](https://www.laskakit.cz/laskakit-scd41-senzor-co2--teploty-a-vlhkosti-vzduchu/) - CO2/teplota/vlhkost nebo [BME280](https://www.laskakit.cz/arduino-senzor-tlaku--teploty-a-vlhkosti-bme280/) - tlak/teplota/vlhkost).
 
+![ESPD-3.5 pinout](https://github.com/LaskaKit/ESPD-35/blob/main/img/ESPD-3.5-pinout.jpg)
+
 ESPD3.5" obsahuje dvě tlačítka - RESET a Power ON/OFF - tlačítko, kterým ESPD3.5" vypneš (dlouhý stisk) a zapneš (krátký stisk). Tlačítko je připojeno k GPIO35.
 Ocenit bys mohl i dutinkovou lištu 2x13 pinů, kam jsme připojili zbylé GPIO ESP32.
 
