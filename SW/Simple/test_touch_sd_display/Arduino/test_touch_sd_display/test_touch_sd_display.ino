@@ -345,49 +345,75 @@ void drawEndScreen()
   tft.setTextDatum(TL_DATUM);
 }
 
+uint8_t isTouched(uint16_t time)
+{
+  unsigned long currentMillis = millis();
+  unsigned long previousMillis = currentMillis;
+  while ((currentMillis - previousMillis) < WAIT)
+  {
+    if (ts.touched())
+    {
+      return 1;
+    }
+    currentMillis = millis();
+  }
+  return 0;
+}
+
 void drawTest() 
 {
   tft.fillScreen(TFT_BLACK);
   drawFrame();
   drawCrosshairs();
   drawGonLines();
-  delay(WAIT);
-
+  if (isTouched(WAIT)) 
+    return;
   tft.fillRect(1, 15, 478 - 1, 304 - 15, TFT_BLACK);
   tft.drawLine(239, 15, 239, 304, TFT_BLUE);
   tft.drawLine(1, 159, 478, 159, TFT_BLUE);
   drawMovSin();
-  delay(WAIT);
+  if (isTouched(WAIT)) 
+    return;
   tft.fillRect(1, 15, 478 - 1, 304 - 15,TFT_BLACK);
   drawRects();
-  delay(WAIT);
+  if (isTouched(WAIT)) 
+    return;
   tft.fillRect(1, 15, 478 - 1, 304 - 15, TFT_BLACK);
   drawRoundRects();
-  delay(WAIT);
+  if (isTouched(WAIT)) 
+    return;
   tft.fillRect(1, 15, 478 - 1, 304 - 15, TFT_BLACK);
   drawCircles();
-  delay(WAIT);
+  if (isTouched(WAIT)) 
+    return;
   tft.fillRect(1, 15, 478 - 1, 304 - 15, TFT_BLACK);
   drawPatternLines();
-  delay(WAIT);
+  if (isTouched(WAIT)) 
+    return;
   tft.fillRect(1, 15, 478 - 1, 304 - 15, TFT_BLACK);
   drawRandCircles();
-  delay(WAIT);
+  if (isTouched(WAIT)) 
+    return;
   tft.fillRect(1, 15, 478 - 1, 304 - 15, TFT_BLACK);
   drawRandRects();
-  delay(WAIT);
+  if (isTouched(WAIT)) 
+    return;
   tft.fillRect(1, 15, 478 - 1, 304 - 15, TFT_BLACK);
   drawRandRoundRects();
-  delay(WAIT);
+  if (isTouched(WAIT)) 
+    return;
   tft.fillRect(1 , 15 , 478 - 1, 304 - 15, TFT_BLACK);
   drawRandLines();
-  delay(WAIT);
+  if (isTouched(WAIT)) 
+    return;
   tft.fillRect(1, 15, 478 - 1, 304 - 15, TFT_BLACK);
   drawRandPoints();
-  delay(WAIT);
+  if (isTouched(WAIT)) 
+    return;
   tft.fillRect(1, 15, 478 - 1, 304 - 15, TFT_BLUE);
   drawEndScreen();
-  delay(10000);
+  if (isTouched(WAIT)) 
+    return;
   tft.fillScreen(TFT_BLACK);
 }
 
@@ -594,8 +620,10 @@ void loop() {
         tft.drawString("text written", TFT_DISPLAY_RESOLUTION_X / 2, TFT_DISPLAY_RESOLUTION_Y / 2);
         SD.end();
       }
-      delay(5000);
-      touchScreen();
+      if (isTouched(5000)) 
+        touchScreen();
+      else
+        touchScreen();
     }
   }
   //Debouncing. To avoid returning the same touch multiple times you can play with this delay.
