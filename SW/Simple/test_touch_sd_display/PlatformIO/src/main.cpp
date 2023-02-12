@@ -615,9 +615,6 @@ void setup()
 	ledcWrite(1, TFT_LED_PWM); // dutyCycle 0-255
 	randomSeed(analogRead(0));
 	Serial.begin(115200);
-	while (!Serial)
-	{
-	}									 // wait for serial port to connect. Needed for native USB port only
 	if (!ts.begin(40)) // 40 in this case represents the sensitivity. Try higer or lower for better response.
 	{
 		Serial.println("Unable to start the capacitive touchscreen.");
@@ -657,6 +654,4 @@ void loop()
 				touchScreen();
 		}
 	}
-	// Debouncing. To avoid returning the same touch multiple times you can play with this delay.
-	delay(50);
 }
