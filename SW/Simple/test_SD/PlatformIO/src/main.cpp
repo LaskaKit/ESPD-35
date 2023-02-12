@@ -1,5 +1,3 @@
-
-
 /*
  * Connect the SD card to the following pins:
  *
@@ -25,7 +23,6 @@
 #define TFT_LED_PWM 100 // dutyCycle 0-255 last minimum was 15
 #define TFT_DISPLAY_RESOLUTION_X 480
 #define TFT_DISPLAY_RESOLUTION_Y 320
-#define CENTRE_X TFT_DISPLAY_RESOLUTION_X / 2
 #define TFT_GREY 0x7BEF
 #define RECT_SIZE_X 100
 #define RECT_SIZE_Y 70
