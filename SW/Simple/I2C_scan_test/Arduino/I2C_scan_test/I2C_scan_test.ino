@@ -53,7 +53,7 @@ void loop()
     {
       if (nDevices)
       {
-        tft.drawString("Error" + String(error) + "at address 0x" + String(address), TFT_DISPLAY_RESOLUTION_X / 2, TEXT_PADDING * nDevices + TEXT_PADDING);
+        tft.drawString("Error" + String(error) + "at address 0x" + String(address), TFT_DISPLAY_RESOLUTION_X / 2, TEXT_PADDING * nDevices + 2 * TEXT_PADDING);
       }
       else
       {
@@ -64,6 +64,11 @@ void loop()
   if (nDevices == 0)
   {
     tft.drawString("No I2C devices found", TFT_DISPLAY_RESOLUTION_X / 2, TEXT_PADDING * 2);
+    tft.drawString("Next scanning in 5 seconds...", TFT_DISPLAY_RESOLUTION_X / 2, TEXT_PADDING * 3);
+  }
+  else
+  {
+    tft.drawString("Next scanning in 5 seconds...", TFT_DISPLAY_RESOLUTION_X / 2, TEXT_PADDING * nDevices + 2 * TEXT_PADDING);
   }
   delay(5000);
 }
