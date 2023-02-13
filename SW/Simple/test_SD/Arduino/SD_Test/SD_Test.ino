@@ -27,8 +27,6 @@
 #define TFT_DISPLAY_RESOLUTION_Y 320
 #define CENTRE_X TFT_DISPLAY_RESOLUTION_X / 2
 #define TFT_GREY 0x7BEF
-#define RECT_SIZE_X 100
-#define RECT_SIZE_Y 70
 #define SDTEST_TEXT_PADDING	30
 // Delay between demo pages
 #define WAIT 1000 // Delay between screen tests, set to 0 to demo speed, 2000 to see what it does!
