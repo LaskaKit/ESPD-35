@@ -14,7 +14,7 @@
 */
 
 // Delay between demo pages
-#define WAIT 2000                // Delay between tests, set to 0 to demo speed, 2000 to see what it does!
+#define WAIT 1000                // Delay between tests, set to 0 to demo speed, 2000 to see what it does!
 
 #define TFT_DISPLAY_RESOLUTION_X  320
 #define TFT_DISPLAY_RESOLUTION_Y  480
