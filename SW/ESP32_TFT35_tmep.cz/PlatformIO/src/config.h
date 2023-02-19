@@ -1,5 +1,8 @@
-char ssid[] = "yourWiFiSSIDname";   // your network SSID (name)
-char pass[] = "yourWiFipassword";   // your network password
+// char ssid[] = "yourWiFiSSIDname";   // your network SSID (name)
+// char pass[] = "yourWiFipassword";   // your network password
+
+char ssid[] = "WiFi_6";   // your network SSID (name)
+char pass[] = "WiFiBurian6";   // your network password
 
 //You can try with our test Weather Station first 
 //LasKKit Test Weather Station, Rychnov nad Kneznou
