@@ -19,12 +19,12 @@
 #include <Arduino.h>
 
 // TFT SPI
-#define TFT_LED 33			// TFT backlight pin
+#define TFT_LED 33		// TFT backlight pin
 #define TFT_LED_PWM 100 // dutyCycle 0-255 last minimum was 15
 #define TFT_DISPLAY_RESOLUTION_X 480
 #define TFT_DISPLAY_RESOLUTION_Y 320
 #define TFT_GREY 0x7BEF
-#define SDTEST_TEXT_PADDING	30
+#define SDTEST_TEXT_PADDING 30
 // Delay between demo pages
 #define WAIT 1000 // Delay between screen tests, set to 0 to demo speed, 2000 to see what it does!
 
@@ -199,13 +199,15 @@ void SDtest()
 	SD.end();
 }
 
-void setup(){
-    ledcSetup(1, 5000, 8);		 // ledChannel, freq, resolution
+void setup()
+{
+	ledcSetup(1, 5000, 8);	   // ledChannel, freq, resolution
 	ledcAttachPin(TFT_LED, 1); // ledPin, ledChannel
 	ledcWrite(1, TFT_LED_PWM); // dutyCycle 0-255
-    displayInit();
-    SDtest();
+	displayInit();
+	SDtest();
 }
 
-void loop(){
+void loop()
+{
 }

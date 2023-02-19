@@ -17,7 +17,7 @@
 
 // TFT SPI
 #define TFT_LED 33			// TFT backlight pin
-#define TFT_LED_PWM 100 // dutyCycle 0-255 last minimum was 15
+#define TFT_LED_PWM 100 	// dutyCycle 0-255 last minimum was 15
 
 #define SD_CS_PIN 4
 

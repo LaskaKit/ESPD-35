@@ -1,16 +1,6 @@
 /* Demo software pro LaskaKit ESPD-3,5" 320x480, ILI9488
  * Email:podpora@laskakit.cz
  * Web:laskarduino.cz
- *
- * in User_Setup.h set ESP32 Dev board pinout to
- * TFT_MISO 12
- * TFT_MOSI 13
- * TFT_SCLK 14
- * TFT_CS   15  // Chip select control pin
- * TFT_DC   32  // Data Command control pin
- * TFT_RST  -1  // Reset pin (could connect to Arduino RESET pin)
- * TFT_BL   33  // LED back-light (required for M5Stack)
- * For Arduino IDE #define SPI_FREQUENCY  20000000
  */
 
 #include <TFT_eSPI.h> // Hardware-specific library
@@ -37,19 +27,20 @@
 #define RECT_SIZE_X 100
 #define RECT_SIZE_Y 70
 #define TEST_TEXT_PADDING 30
+
 // Delay between demo pages
-#define WAIT 1000 // Delay between screen tests, set to 0 to demo speed, 2000 to see what it does!
+#define WAIT 1000
 
 #define SD_CS_PIN 4
-#define POWER_OFF_PIN 16
+#define POWER_OFF_PIN 17
 #define ADC_PIN 34                      // Battery voltage mesurement
 #define deviderRatio 1.3
 
-FT6236 ts = FT6236();
-TFT_eSPI tft = TFT_eSPI(); // Invoke custom library with default width and height
-ESP32AnalogRead adc;
+FT6236 ts = FT6236();		// Create object for Touch library
+TFT_eSPI tft = TFT_eSPI();  // Invoke custom library with default width and height
+ESP32AnalogRead adc;		// Create object for adc library
 
-uint32_t runTime = 0;
+uint32_t runTime = 0;		// Variable for measuring Screen test time
 
 void displayInit()
 {
@@ -58,6 +49,24 @@ void displayInit()
 	tft.fillScreen(TFT_BLACK);
 }
 
+// Delay function with milis()
+uint8_t isTouched(uint16_t time)
+{
+	unsigned long currentMillis = millis();
+	unsigned long previousMillis = currentMillis;
+	while ((currentMillis - previousMillis) < time)
+	{
+		if (ts.touched())
+		{
+			return 1;
+		}
+		currentMillis = millis();
+	}
+	return 0;
+}
+
+// Sceen test functions
+/*************************************************************************************************/
 void drawFrame()
 {
 	runTime = millis();
@@ -356,22 +365,7 @@ void drawEndScreen()
 	tft.setTextDatum(TL_DATUM);
 }
 
-uint8_t isTouched(uint16_t time)
-{
-	unsigned long currentMillis = millis();
-	unsigned long previousMillis = currentMillis;
-	while ((currentMillis - previousMillis) < time)
-	{
-		if (ts.touched())
-		{
-			return 1;
-		}
-		currentMillis = millis();
-	}
-	return 0;
-}
-
-void drawTest()
+void screenTest()
 {
 	tft.fillScreen(TFT_BLACK);
 	drawFrame();
@@ -427,7 +421,10 @@ void drawTest()
 		return;
 	tft.fillScreen(TFT_BLACK);
 }
+// End of Screen test functions
+/*************************************************************************************************/
 
+// Print touch coordinates on display
 void printCoordinates(TS_Point p)
 {
 	tft.setTextSize(1);
@@ -440,6 +437,7 @@ void printCoordinates(TS_Point p)
 	tft.drawString("Y: " + String(p.y), 3, 16);
 }
 
+// Print battery voltage on display
 void printVoltage()
 {
 	tft.setTextSize(1);
@@ -450,26 +448,39 @@ void printVoltage()
 	tft.drawString(String(adc.readVoltage() * deviderRatio) + " V", TFT_DISPLAY_RESOLUTION_X - 3, 0);
 }
 
+// Print initial screen
 void touchScreen()
 {
 	tft.fillScreen(TFT_BLACK);
-	tft.fillRoundRect(TFT_DISPLAY_RESOLUTION_X - RECT_SIZE_X, TFT_DISPLAY_RESOLUTION_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_RED);
-	tft.fillRoundRect(0, TFT_DISPLAY_RESOLUTION_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_RED);
-	tft.fillRoundRect(RECT_SIZE_X + 27, TFT_DISPLAY_RESOLUTION_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_RED);
-	tft.fillRoundRect(2 * RECT_SIZE_X + 54, TFT_DISPLAY_RESOLUTION_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_RED);
 	tft.setTextSize(1);
 	tft.setTextFont(4);
-	tft.setTextColor(TFT_WHITE, TFT_RED);
+	// Print SD test button
+	tft.setTextColor(TFT_WHITE, TFT_BROWN);
+	tft.fillRoundRect(0, TFT_DISPLAY_RESOLUTION_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_BROWN);
 	tft.setTextDatum(MC_DATUM);
 	tft.drawString("SD test", (RECT_SIZE_X / 2), TFT_DISPLAY_RESOLUTION_Y - (RECT_SIZE_Y / 2));
+	// Print I2C scanner button
+	tft.setTextColor(TFT_WHITE, TFT_DARKGREEN);
+	tft.fillRoundRect(RECT_SIZE_X + 27, TFT_DISPLAY_RESOLUTION_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_DARKGREEN);
 	tft.setTextDatum(BC_DATUM);
-	tft.drawString("Screen", TFT_DISPLAY_RESOLUTION_X - (RECT_SIZE_X / 2), TFT_DISPLAY_RESOLUTION_Y - (RECT_SIZE_Y / 2));
 	tft.drawString("I2C", (RECT_SIZE_X / 2) + RECT_SIZE_X + 27, TFT_DISPLAY_RESOLUTION_Y - (RECT_SIZE_Y / 2));
+	tft.setTextDatum(TC_DATUM);
+	tft.drawString("scanner", (RECT_SIZE_X / 2) + RECT_SIZE_X + 27, TFT_DISPLAY_RESOLUTION_Y - (RECT_SIZE_Y / 2));
+	// Print Power off button
+	tft.setTextColor(TFT_WHITE, TFT_RED);
+	tft.fillRoundRect(2 * RECT_SIZE_X + 54, TFT_DISPLAY_RESOLUTION_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_RED);
+	tft.setTextDatum(BC_DATUM);
 	tft.drawString("Power", (RECT_SIZE_X / 2) + 2 * RECT_SIZE_X + 54, TFT_DISPLAY_RESOLUTION_Y - (RECT_SIZE_Y / 2));
 	tft.setTextDatum(TC_DATUM);
-	tft.drawString("test", TFT_DISPLAY_RESOLUTION_X - (RECT_SIZE_X / 2), TFT_DISPLAY_RESOLUTION_Y - (RECT_SIZE_Y / 2));
-	tft.drawString("scanner", (RECT_SIZE_X / 2) + RECT_SIZE_X + 27, TFT_DISPLAY_RESOLUTION_Y - (RECT_SIZE_Y / 2));
 	tft.drawString("off", (RECT_SIZE_X / 2) + 2 * RECT_SIZE_X + 54, TFT_DISPLAY_RESOLUTION_Y - (RECT_SIZE_Y / 2));
+	// Print Screen test button
+	tft.setTextColor(TFT_WHITE, TFT_BLUE);
+	tft.fillRoundRect(TFT_DISPLAY_RESOLUTION_X - RECT_SIZE_X, TFT_DISPLAY_RESOLUTION_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_BLUE);
+	tft.setTextDatum(BC_DATUM);
+	tft.drawString("Screen", TFT_DISPLAY_RESOLUTION_X - (RECT_SIZE_X / 2), TFT_DISPLAY_RESOLUTION_Y - (RECT_SIZE_Y / 2));
+	tft.setTextDatum(TC_DATUM);
+	tft.drawString("test", TFT_DISPLAY_RESOLUTION_X - (RECT_SIZE_X / 2), TFT_DISPLAY_RESOLUTION_Y - (RECT_SIZE_Y / 2));
+
 	tft.setTextSize(1);
 	tft.setTextFont(2);
 	tft.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -479,6 +490,8 @@ void touchScreen()
 	printVoltage();
 }
 
+// SD test functions
+/*************************************************************************************************/
 int appendFile(fs::FS &fs, const char *path, const char *message)
 {
 	File file = fs.open(path, FILE_APPEND);
@@ -536,6 +549,7 @@ int readFile(fs::FS &fs, const char *path)
 	return lines;
 }
 
+// Print last line of file
 void printLastLine(int32_t x, int32_t y, fs::FS &fs, const char *path)
 {
 	int lines = readFile(fs, path);
@@ -608,6 +622,7 @@ void SDtest()
 	if (SDtestInit(TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING))
 	{
 		tft.drawString("SD card not found", TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING);
+		tft.drawString("Touch to return to the main page", TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 2);
 		SD.end();
 		return;
 	}
@@ -643,6 +658,8 @@ void SDtest()
 	SD.end();
 	while (!ts.touched());
 }
+// End of SD test functions
+/*************************************************************************************************/
 
 void I2CTest()
 {
@@ -694,10 +711,11 @@ void setup()
 	ledcSetup(1, 5000, 8);	   // ledChannel, freq, resolution
 	ledcAttachPin(TFT_LED, 1); // ledPin, ledChannel
 	ledcWrite(1, TFT_LED_PWM); // dutyCycle 0-255
-	randomSeed(analogRead(0));
+
+	randomSeed(analogRead(0)); // get random number for Screen test
 	adc.attach(ADC_PIN);
 	Serial.begin(115200);
-	if (!ts.begin(40)) // 40 in this case represents the sensitivity. Try higer or lower for better response.
+	if (!ts.begin(40)) 		  // 40 in this case represents the sensitivity. Try higer or lower for better response.
 	{
 		Serial.println("Unable to start the capacitive touchscreen.");
 	}
@@ -715,7 +733,7 @@ void loop()
 		// If Screen test touched
 		if ((p.x > (320 - RECT_SIZE_Y)) && (p.x < 320) && (p.y < 100) && (p.y > 0))
 		{
-			drawTest();
+			screenTest();
 			touchScreen();
 		}
 		// If SD test touched
@@ -727,11 +745,13 @@ void loop()
 			else
 				touchScreen();
 		}
+		// If I2C scanner touched
 		else if ((p.x > (320 - RECT_SIZE_Y)) && (p.x < 320) && (p.y < (480 - (RECT_SIZE_X + 27))) && (p.y > (480 - (2 * RECT_SIZE_X + 27))))
 		{
 			I2CTest();
 			touchScreen();
 		}
+		// If Power off touched
 		else if ((p.x > (320 - RECT_SIZE_Y)) && (p.x < 320) && (p.y < (480 - (2 * RECT_SIZE_X + 54))) && (p.y > (480 - (3 * RECT_SIZE_X + 54))))
 		{
 			pinMode(POWER_OFF_PIN, OUTPUT);

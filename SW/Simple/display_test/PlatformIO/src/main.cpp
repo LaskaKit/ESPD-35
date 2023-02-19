@@ -1,16 +1,5 @@
 /* Demo software pro LaskaKit ESPD-3,5" 320x480, ILI9488 
  * Email:podpora@laskakit.cz
- * Web:laskarduino.cz
- * 
- * in User_Setup.h set ESP32 Dev board pinout to 
- * TFT_MISO 12
- * TFT_MOSI 13
- * TFT_SCLK 14
- * TFT_CS   15  // Chip select control pin
- * TFT_DC   32  // Data Command control pin
- * TFT_RST  -1  // Reset pin (could connect to Arduino RESET pin)
- * TFT_BL   33  // LED back-light (required for M5Stack)
- * For Arduino IDE #define SPI_FREQUENCY  20000000
 */
 
 // Delay between demo pages

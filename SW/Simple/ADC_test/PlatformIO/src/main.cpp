@@ -8,7 +8,7 @@
 
 // TFT SPI
 #define TFT_LED 33			// TFT backlight pin
-#define TFT_LED_PWM 100 // dutyCycle 0-255 last minimum was 15
+#define TFT_LED_PWM 100 	// dutyCycle 0-255 last minimum was 15
 #define TFT_DISPLAY_RESOLUTION_X 480
 #define TFT_DISPLAY_RESOLUTION_Y 320
 
@@ -24,8 +24,8 @@ void displayInit()
 
 void setup() {
   ledcSetup(1, 5000, 8);		 // ledChannel, freq, resolution
-	ledcAttachPin(TFT_LED, 1); // ledPin, ledChannel
-	ledcWrite(1, TFT_LED_PWM); // dutyCycle 0-255
+	ledcAttachPin(TFT_LED, 1); 	 // ledPin, ledChannel
+	ledcWrite(1, TFT_LED_PWM);   // dutyCycle 0-255
   displayInit();
   adc.attach(ADC);
 }
