@@ -133,7 +133,7 @@ void readChannel() {
   Serial.println("Client connected");
  
   // Make an url
-  char url[50];                                   // Make new array, 50 bytes long
+  char url[70];                                   // Make new array, 50 bytes long
   strncpy(url, &jsonurl[15], strlen(jsonurl)-14); // Remove "https://tmep.cz" and leave rest
  
   Serial.print("Requesting URL: "); Serial.println(url);
@@ -176,7 +176,7 @@ void readChannel() {
   Serial.println(json);
  
   // Lets throw our json on ArduinoJson library and get results!
-  StaticJsonDocument<500> doc; 
+  StaticJsonDocument<1000> doc; 
   deserializeJson(doc, json);
   auto error = deserializeJson(doc, json);
   if (error) {
@@ -329,41 +329,41 @@ void printValues() {
   display.setTextPadding(display.textWidth("-99.99`C", 4));
   if ((temp > 60) || (temp < -40))
   {
-    display.drawString("0`C", TFT_TEXT_POS1_X, TFT_TEXT_POS1_Y, 4);
+    display.drawString("- `C", TFT_TEXT_POS1_X, TFT_TEXT_POS1_Y, 4);
   }
   else
   {
-    display.drawString(String(temp) + "`C", TFT_TEXT_POS1_X, TFT_TEXT_POS1_Y, 4);
+    display.drawString(String(temp) + " `C", TFT_TEXT_POS1_X, TFT_TEXT_POS1_Y, 4);
   }
   display.setTextColor(TFT_WHITE, 0xB50F);
   display.setTextPadding(display.textWidth("-99.99`C", 4));
   if ((temp_in > 30) || (temp_in < -10))
   {
-    display.drawString("0`C", TFT_TEXT_POS2_X, TFT_TEXT_POS2_Y, 4);
+    display.drawString("- `C", TFT_TEXT_POS2_X, TFT_TEXT_POS2_Y, 4);
   }
   else
   {
-    display.drawString(String(temp_in) + "`C", TFT_TEXT_POS2_X, TFT_TEXT_POS2_Y, 4);
+    display.drawString(String(temp_in) + " `C", TFT_TEXT_POS2_X, TFT_TEXT_POS2_Y, 4);
   }
   display.setTextColor(TFT_WHITE, 0x82EB);
   display.setTextPadding(display.textWidth("9999hPa", 4));
-  if ((pressure > 60) || (pressure < -40))
+  if ((pressure > 1100) || (pressure < 900))
   {
-    display.drawString("0hPa", TFT_TEXT_POS3_X, TFT_TEXT_POS3_Y, 4);
+    display.drawString("- hPa", TFT_TEXT_POS3_X, TFT_TEXT_POS3_Y, 4);
   }
   else
   {
-    display.drawString(String(pressure) + "hPa", TFT_TEXT_POS3_X, TFT_TEXT_POS3_Y, 4);
+    display.drawString(String(pressure) + " hPa", TFT_TEXT_POS3_X, TFT_TEXT_POS3_Y, 4);
   }
   display.setTextColor(TFT_WHITE, 0x9DB7);
   display.setTextPadding(display.textWidth("100%", 4));
-  if ((humidity > 60) || (humidity < -40))
+  if ((humidity > 100) || (humidity < 0))
   {
-    display.drawString("0%", TFT_TEXT_POS4_X, TFT_TEXT_POS4_Y, 4);
+    display.drawString("- %Rh", TFT_TEXT_POS4_X, TFT_TEXT_POS4_Y, 4);
   }
   else
   {
-    display.drawString(String(humidity) + "%", TFT_TEXT_POS4_X, TFT_TEXT_POS4_Y, 4);
+    display.drawString(String(humidity) + " %Rh", TFT_TEXT_POS4_X, TFT_TEXT_POS4_Y, 4);
   }
 }
 
