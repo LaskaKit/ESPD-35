@@ -2,11 +2,6 @@
 ## LaskaKit Useful stuff
 #################
 
-#############
-## LaskaKit folders
-#############
-input/
-
 ## AVR Development
 *.eep
 *.elf
@@ -49,6 +44,7 @@ input/
 *.suo
 *.user
 *.sln.docstates
+*.docx
 
 # Build results
 [Dd]ebug/
