@@ -21,7 +21,7 @@
 
 #define SD_CS_PIN 4
 
-FT6236 ts = FT6236();
+FT6236 ts = FT6236(480, 320);
 TFT_eSPI tft = TFT_eSPI(); // Invoke custom library with default width and height
 
 void displayInit()
@@ -38,6 +38,7 @@ void setup(void)
     {
         Serial.println("Unable to start the capacitive touchscreen.");
     }
+	ts.setRotation(1);
 	ledcSetup(1, 5000, 8);		 // ledChannel, freq, resolution
 	ledcAttachPin(TFT_LED, 1); // ledPin, ledChannel
 	ledcWrite(1, TFT_LED_PWM); // dutyCycle 0-255

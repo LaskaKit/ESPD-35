@@ -1,18 +1,13 @@
-#include <Arduino.h>
 #include <lvgl.h>
 #include <TFT_eSPI.h>
+#include "FT6236.h"
 /*If you want to use the LVGL examples,
   make sure to install the lv_examples Arduino library
   and uncomment the following line.
 #include <lv_examples.h>
 */
 
-#include <demos/lv_demos.h>
-// #include <examples/lv_examples.h>
-
-// TFT SPI
-#define TFT_LED 33      // TFT backlight pin
-#define TFT_LED_PWM 100 // dutyCycle 0-255 last minimum was 15
+// #include <lv_demo.h>
 
 /*Change to your screen resolution*/
 static const uint16_t screenWidth = 480;
@@ -21,6 +16,11 @@ static const uint16_t screenHeight = 320;
 static lv_disp_draw_buf_t draw_buf;
 static lv_color_t buf[screenWidth * 10];
 
+// TFT SPI
+#define TFT_LED 33			// TFT backlight pin
+#define TFT_LED_PWM 100 	// dutyCycle 0-255 last minimum was 15
+
+FT6236 ts = FT6236(screenWidth, screenHeight);
 TFT_eSPI tft = TFT_eSPI(screenWidth, screenHeight); /* TFT instance */
 
 #if LV_USE_LOG != 0
@@ -46,13 +46,38 @@ void my_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color
   lv_disp_flush_ready(disp);
 }
 
+/*Read the touchpad*/
+void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data)
+{
+  if (!ts.touched())
+  {
+    data->state = LV_INDEV_STATE_REL;
+  }
+  else
+  {
+    uint16_t touchX, touchY;
+    // Retrieve a point
+    TS_Point p = ts.getPoint();
+    touchX = p.x;
+    touchY = p.y;
+
+    data->state = LV_INDEV_STATE_PR;
+
+    /*Set the coordinates*/
+    data->point.x = touchX;
+    data->point.y = touchY;
+
+    Serial.print("Data x ");
+    Serial.println(touchX);
+
+    Serial.print("Data y ");
+    Serial.println(touchY);
+  }
+}
+
 void setup()
 {
   Serial.begin(115200); /* prepare for possible serial debug */
-  // configure backlight LED PWM functionalitites
-  ledcSetup(1, 5000, 8);     // ledChannel, freq, resolution
-  ledcAttachPin(TFT_LED, 1); // ledPin, ledChannel
-  ledcWrite(1, TFT_LED_PWM); // dutyCycle 0-255
 
   String LVGL_Arduino = "Hello Arduino! ";
   LVGL_Arduino += String('V') + lv_version_major() + "." + lv_version_minor() + "." + lv_version_patch();
@@ -65,9 +90,17 @@ void setup()
 #if LV_USE_LOG != 0
   lv_log_register_print_cb(my_print); /* register print function for debugging */
 #endif
-
+	ledcSetup(1, 5000, 8);		 // ledChannel, freq, resolution
+	ledcAttachPin(TFT_LED, 1); // ledPin, ledChannel
+	ledcWrite(1, TFT_LED_PWM); // dutyCycle 0-255
   tft.begin();        /* TFT init */
-  tft.setRotation(1); /* Landscape orientation, flipped */
+  tft.setRotation(3); /* Landscape orientation, flipped */
+
+  if (!ts.begin(40)) // 40 in this case represents the sensitivity. Try higer or lower for better response.
+  {
+    Serial.println("Unable to start the capacitive touchscreen.");
+  }
+  ts.setRotation(3);
 
   lv_disp_draw_buf_init(&draw_buf, buf, NULL, screenWidth * 10);
 
@@ -81,6 +114,13 @@ void setup()
   disp_drv.draw_buf = &draw_buf;
   lv_disp_drv_register(&disp_drv);
 
+  /*Initialize the (dummy) input device driver*/
+  static lv_indev_drv_t indev_drv;
+  lv_indev_drv_init(&indev_drv);
+  indev_drv.type = LV_INDEV_TYPE_POINTER;
+  indev_drv.read_cb = my_touchpad_read;
+  lv_indev_drv_register(&indev_drv);
+
 #if 1
   /* Create simple label */
   lv_obj_t *label = lv_label_create(lv_scr_act());
@@ -88,8 +128,9 @@ void setup()
   lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
 #else
   /* Try an example from the lv_examples Arduino library
-     make sure to include it as written above.*/
-  // lv_example_btn_1();
+     make sure to include it as written above.
+  lv_example_btn_1();
+ */
 
   // uncomment one of these demos
   // lv_demo_widgets();            // OK

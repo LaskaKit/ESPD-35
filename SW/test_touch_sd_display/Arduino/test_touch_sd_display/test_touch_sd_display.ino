@@ -20,9 +20,9 @@
 // TFT SPI
 #define TFT_LED 33		// TFT backlight pin
 #define TFT_LED_PWM 100 // dutyCycle 0-255 last minimum was 15
-#define TFT_DISPLAY_RESOLUTION_X 480
-#define TFT_DISPLAY_RESOLUTION_Y 320
-#define CENTRE_X TFT_DISPLAY_RESOLUTION_X / 2
+#define TFT_RES_X 480
+#define TFT_RES_Y 320
+#define CENTRE_X TFT_RES_X / 2
 #define TFT_GREY 0x7BEF
 #define RECT_SIZE_X 100
 #define RECT_SIZE_Y 70
@@ -36,11 +36,11 @@
 #define ADC_PIN 34                      // Battery voltage mesurement
 #define deviderRatio 1.3
 
-FT6236 ts = FT6236();		// Create object for Touch library
-TFT_eSPI tft = TFT_eSPI();  // Invoke custom library with default width and height
-ESP32AnalogRead adc;		// Create object for adc library
+FT6236 ts = FT6236(480, 320);	// Create object for Touch library
+TFT_eSPI tft = TFT_eSPI();  	// Invoke custom library with default width and height
+ESP32AnalogRead adc;			// Create object for adc library
 
-uint32_t runTime = 0;		// Variable for measuring Screen test time
+uint32_t runTime = 0;			// Variable for measuring Screen test time
 
 void displayInit()
 {
@@ -70,9 +70,9 @@ uint8_t isTouched(uint16_t time)
 void drawFrame()
 {
 	runTime = millis();
-	tft.fillRect(0, 0, TFT_DISPLAY_RESOLUTION_X, 13, TFT_RED);
+	tft.fillRect(0, 0, TFT_RES_X, 13, TFT_RED);
 
-	tft.fillRect(0, 305, TFT_DISPLAY_RESOLUTION_X, TFT_DISPLAY_RESOLUTION_Y, TFT_GREY);
+	tft.fillRect(0, 305, TFT_RES_X, TFT_RES_Y, TFT_GREY);
 	tft.setTextColor(TFT_BLACK, TFT_RED);
 
 	tft.drawCentreString("* TFT_eSPI *", CENTRE_X, 3, 1);
@@ -348,7 +348,7 @@ void drawRandPoints()
 
 void drawEndScreen()
 {
-	tft.fillRect(0, 0, TFT_DISPLAY_RESOLUTION_X, TFT_DISPLAY_RESOLUTION_Y, TFT_BLUE);
+	tft.fillRect(0, 0, TFT_RES_X, TFT_RES_Y, TFT_BLUE);
 
 	tft.fillRoundRect(160, 70, 319 - 160, 169 - 70, 3, TFT_RED);
 
@@ -445,7 +445,7 @@ void printVoltage()
 	tft.setTextColor(TFT_WHITE, TFT_BLACK);
 	tft.setTextDatum(TR_DATUM);
 	tft.setTextPadding(tft.textWidth("9.99 V", 2));
-	tft.drawString(String(adc.readVoltage() * deviderRatio) + " V", TFT_DISPLAY_RESOLUTION_X - 3, 0);
+	tft.drawString(String(adc.readVoltage() * deviderRatio) + " V", TFT_RES_X - 3, 0);
 }
 
 // Print initial screen
@@ -456,30 +456,30 @@ void touchScreen()
 	tft.setTextFont(4);
 	// Print SD test button
 	tft.setTextColor(TFT_WHITE, TFT_BROWN);
-	tft.fillRoundRect(0, TFT_DISPLAY_RESOLUTION_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_BROWN);
+	tft.fillRoundRect(0, TFT_RES_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_BROWN);
 	tft.setTextDatum(MC_DATUM);
-	tft.drawString("SD test", (RECT_SIZE_X / 2), TFT_DISPLAY_RESOLUTION_Y - (RECT_SIZE_Y / 2));
+	tft.drawString("SD test", (RECT_SIZE_X / 2), TFT_RES_Y - (RECT_SIZE_Y / 2));
 	// Print I2C scanner button
 	tft.setTextColor(TFT_WHITE, TFT_DARKGREEN);
-	tft.fillRoundRect(RECT_SIZE_X + 27, TFT_DISPLAY_RESOLUTION_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_DARKGREEN);
+	tft.fillRoundRect(RECT_SIZE_X + 27, TFT_RES_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_DARKGREEN);
 	tft.setTextDatum(BC_DATUM);
-	tft.drawString("I2C", (RECT_SIZE_X / 2) + RECT_SIZE_X + 27, TFT_DISPLAY_RESOLUTION_Y - (RECT_SIZE_Y / 2));
+	tft.drawString("I2C", (RECT_SIZE_X / 2) + RECT_SIZE_X + 27, TFT_RES_Y - (RECT_SIZE_Y / 2));
 	tft.setTextDatum(TC_DATUM);
-	tft.drawString("scanner", (RECT_SIZE_X / 2) + RECT_SIZE_X + 27, TFT_DISPLAY_RESOLUTION_Y - (RECT_SIZE_Y / 2));
+	tft.drawString("scanner", (RECT_SIZE_X / 2) + RECT_SIZE_X + 27, TFT_RES_Y - (RECT_SIZE_Y / 2));
 	// Print Power off button
 	tft.setTextColor(TFT_WHITE, TFT_RED);
-	tft.fillRoundRect(2 * RECT_SIZE_X + 54, TFT_DISPLAY_RESOLUTION_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_RED);
+	tft.fillRoundRect(2 * RECT_SIZE_X + 54, TFT_RES_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_RED);
 	tft.setTextDatum(BC_DATUM);
-	tft.drawString("Power", (RECT_SIZE_X / 2) + 2 * RECT_SIZE_X + 54, TFT_DISPLAY_RESOLUTION_Y - (RECT_SIZE_Y / 2));
+	tft.drawString("Power", (RECT_SIZE_X / 2) + 2 * RECT_SIZE_X + 54, TFT_RES_Y - (RECT_SIZE_Y / 2));
 	tft.setTextDatum(TC_DATUM);
-	tft.drawString("off", (RECT_SIZE_X / 2) + 2 * RECT_SIZE_X + 54, TFT_DISPLAY_RESOLUTION_Y - (RECT_SIZE_Y / 2));
+	tft.drawString("off", (RECT_SIZE_X / 2) + 2 * RECT_SIZE_X + 54, TFT_RES_Y - (RECT_SIZE_Y / 2));
 	// Print Screen test button
 	tft.setTextColor(TFT_WHITE, TFT_BLUE);
-	tft.fillRoundRect(TFT_DISPLAY_RESOLUTION_X - RECT_SIZE_X, TFT_DISPLAY_RESOLUTION_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_BLUE);
+	tft.fillRoundRect(TFT_RES_X - RECT_SIZE_X, TFT_RES_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_BLUE);
 	tft.setTextDatum(BC_DATUM);
-	tft.drawString("Screen", TFT_DISPLAY_RESOLUTION_X - (RECT_SIZE_X / 2), TFT_DISPLAY_RESOLUTION_Y - (RECT_SIZE_Y / 2));
+	tft.drawString("Screen", TFT_RES_X - (RECT_SIZE_X / 2), TFT_RES_Y - (RECT_SIZE_Y / 2));
 	tft.setTextDatum(TC_DATUM);
-	tft.drawString("test", TFT_DISPLAY_RESOLUTION_X - (RECT_SIZE_X / 2), TFT_DISPLAY_RESOLUTION_Y - (RECT_SIZE_Y / 2));
+	tft.drawString("test", TFT_RES_X - (RECT_SIZE_X / 2), TFT_RES_Y - (RECT_SIZE_Y / 2));
 
 	tft.setTextSize(1);
 	tft.setTextFont(2);
@@ -619,41 +619,41 @@ void SDtest()
 	tft.setTextFont(4);
 	tft.setTextColor(TFT_WHITE, TFT_BLACK);
 	tft.setTextDatum(BC_DATUM);
-	if (SDtestInit(TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING))
+	if (SDtestInit(TFT_RES_X / 2, TEST_TEXT_PADDING))
 	{
-		tft.drawString("SD card not found", TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING);
-		tft.drawString("Touch to return to the main page", TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 2);
+		tft.drawString("SD card not found", TFT_RES_X / 2, TEST_TEXT_PADDING);
+		tft.drawString("Touch to return to the main page", TFT_RES_X / 2, TEST_TEXT_PADDING * 2);
 		SD.end();
 		return;
 	}
-	tft.drawString("SD card mounted", TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 2);
+	tft.drawString("SD card mounted", TFT_RES_X / 2, TEST_TEXT_PADDING * 2);
 	File file = SD.open("/test.txt", FILE_APPEND);
 	if (!file)
 	{
 		if (writeFile(SD, "/test.txt", "test\n"))
 		{
-			tft.drawString("Unable to write into file", TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 3);
-			tft.drawString("Touch to return to the main page", TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 4);
+			tft.drawString("Unable to write into file", TFT_RES_X / 2, TEST_TEXT_PADDING * 3);
+			tft.drawString("Touch to return to the main page", TFT_RES_X / 2, TEST_TEXT_PADDING * 4);
 			return;
 		}
-		tft.drawString("File test.txt created, test line written", TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 3);
-		tft.drawString("Number of lines in the document: " + String(readFile(SD, "/test.txt")), TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 4);
-		printLastLine(TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 5, SD, "/test.txt");
-		tft.drawString("Touch to return to the main page", TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 6);
+		tft.drawString("File test.txt created, test line written", TFT_RES_X / 2, TEST_TEXT_PADDING * 3);
+		tft.drawString("Number of lines in the document: " + String(readFile(SD, "/test.txt")), TFT_RES_X / 2, TEST_TEXT_PADDING * 4);
+		printLastLine(TFT_RES_X / 2, TEST_TEXT_PADDING * 5, SD, "/test.txt");
+		tft.drawString("Touch to return to the main page", TFT_RES_X / 2, TEST_TEXT_PADDING * 6);
 	}
 	else
 	{
-		tft.drawString("Number of lines in the document: " + String(readFile(SD, "/test.txt")), TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 3);
+		tft.drawString("Number of lines in the document: " + String(readFile(SD, "/test.txt")), TFT_RES_X / 2, TEST_TEXT_PADDING * 3);
 		if (appendFile(SD, "/test.txt", "test\n"))
 		{
-			tft.drawString("Unable to append into test.txt", TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 4);
-			tft.drawString("Touch to return to the main page", TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 5);
+			tft.drawString("Unable to append into test.txt", TFT_RES_X / 2, TEST_TEXT_PADDING * 4);
+			tft.drawString("Touch to return to the main page", TFT_RES_X / 2, TEST_TEXT_PADDING * 5);
 			return;
 		}
-		tft.drawString("Test line appended to test.txt", TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 4);
-		tft.drawString("Number of lines in the document: " + String(readFile(SD, "/test.txt")), TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 5);
-		printLastLine(TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 6, SD, "/test.txt");
-		tft.drawString("Touch to return to the main page", TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 7);
+		tft.drawString("Test line appended to test.txt", TFT_RES_X / 2, TEST_TEXT_PADDING * 4);
+		tft.drawString("Number of lines in the document: " + String(readFile(SD, "/test.txt")), TFT_RES_X / 2, TEST_TEXT_PADDING * 5);
+		printLastLine(TFT_RES_X / 2, TEST_TEXT_PADDING * 6, SD, "/test.txt");
+		tft.drawString("Touch to return to the main page", TFT_RES_X / 2, TEST_TEXT_PADDING * 7);
 	}
 	SD.end();
 	while (!ts.touched());
@@ -671,7 +671,7 @@ void I2CTest()
 	tft.setTextFont(4);
 	tft.setTextColor(TFT_WHITE, TFT_BLACK);
 	tft.setTextDatum(BC_DATUM);
-	tft.drawString("Scanning for I2C devices...", TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING);
+	tft.drawString("Scanning for I2C devices...", TFT_RES_X / 2, TEST_TEXT_PADDING);
 	for (address = 0x01; address < 0x7f; address++)
 	{
 		Wire.beginTransmission(address);
@@ -679,28 +679,28 @@ void I2CTest()
 		if (error == 0)
 		{
 			nDevices++;
-			tft.drawString("I2C device found at address 0x" + String(address), TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * nDevices + TEST_TEXT_PADDING);
+			tft.drawString("I2C device found at address 0x" + String(address), TFT_RES_X / 2, TEST_TEXT_PADDING * nDevices + TEST_TEXT_PADDING);
 		}
 		else if (error != 2)
 		{
 			if (nDevices)
 			{
-				tft.drawString("Error" + String(error) + "at address 0x" + String(address), TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * nDevices + 2 * TEST_TEXT_PADDING);
+				tft.drawString("Error" + String(error) + "at address 0x" + String(address), TFT_RES_X / 2, TEST_TEXT_PADDING * nDevices + 2 * TEST_TEXT_PADDING);
 			}
 			else
 			{
-				tft.drawString("Error" + String(error) + "at address 0x" + String(address), TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 2);
+				tft.drawString("Error" + String(error) + "at address 0x" + String(address), TFT_RES_X / 2, TEST_TEXT_PADDING * 2);
 			}
 		}
 	}
 	if (nDevices == 0)
 	{
-		tft.drawString("No I2C devices found", TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 2);
-		tft.drawString("Touch to return to the main page", TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * 3);
+		tft.drawString("No I2C devices found", TFT_RES_X / 2, TEST_TEXT_PADDING * 2);
+		tft.drawString("Touch to return to the main page", TFT_RES_X / 2, TEST_TEXT_PADDING * 3);
 	}
 	else
 	{
-		tft.drawString("Touch to return to the main page", TFT_DISPLAY_RESOLUTION_X / 2, TEST_TEXT_PADDING * nDevices + 2 * TEST_TEXT_PADDING);
+		tft.drawString("Touch to return to the main page", TFT_RES_X / 2, TEST_TEXT_PADDING * nDevices + 2 * TEST_TEXT_PADDING);
 	}
 	while (!ts.touched());
 }
@@ -719,6 +719,7 @@ void setup()
 	{
 		Serial.println("Unable to start the capacitive touchscreen.");
 	}
+	ts.setRotation(1);
 	displayInit();
 	touchScreen();
 }
@@ -731,13 +732,13 @@ void loop()
 		printCoordinates(p);
 		printVoltage();
 		// If Screen test touched
-		if ((p.x > (320 - RECT_SIZE_Y)) && (p.x < 320) && (p.y < 100) && (p.y > 0))
+		if ((p.x > (TFT_RES_X - RECT_SIZE_X)) && (p.x < TFT_RES_X) && (p.y > (TFT_RES_Y - RECT_SIZE_Y)) && (p.y < TFT_RES_Y))
 		{
 			screenTest();
 			touchScreen();
 		}
 		// If SD test touched
-		else if ((p.x > (320 - RECT_SIZE_Y)) && (p.x < 320) && (p.y < 480) && (p.y > (480 - RECT_SIZE_X)))
+		else if ((p.x > 0) && (p.x < (RECT_SIZE_X)) && (p.y > (TFT_RES_Y - RECT_SIZE_Y)) && (p.y < TFT_RES_Y))
 		{
 			SDtest();
 			if (isTouched(5000))
@@ -746,13 +747,13 @@ void loop()
 				touchScreen();
 		}
 		// If I2C scanner touched
-		else if ((p.x > (320 - RECT_SIZE_Y)) && (p.x < 320) && (p.y < (480 - (RECT_SIZE_X + 27))) && (p.y > (480 - (2 * RECT_SIZE_X + 27))))
+		else if ((p.x > (RECT_SIZE_X + 27)) && (p.x < (2 * RECT_SIZE_X + 27)) && (p.y > (TFT_RES_Y - RECT_SIZE_Y)) && (p.y < TFT_RES_Y))
 		{
 			I2CTest();
 			touchScreen();
 		}
 		// If Power off touched
-		else if ((p.x > (320 - RECT_SIZE_Y)) && (p.x < 320) && (p.y < (480 - (2 * RECT_SIZE_X + 54))) && (p.y > (480 - (3 * RECT_SIZE_X + 54))))
+		else if ((p.x > (2 * RECT_SIZE_X + 54)) && (p.x < (3 * RECT_SIZE_X + 54)) && (p.y > (TFT_RES_Y - RECT_SIZE_Y)) && (p.y < TFT_RES_Y))
 		{
 			pinMode(POWER_OFF_PIN, OUTPUT);
 			digitalWrite(POWER_OFF_PIN, LOW);
