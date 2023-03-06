@@ -1,6 +1,6 @@
 /* Demo software pro LaskaKit ESPD-3,5" 320x480, ILI9488 
  * Email:podpora@laskakit.cz
- * Web:laskarduino.cz
+ * Web:laskakit.cz
  * 
  * in User_Setup.h set ESP32 Dev board pinout to 
  * TFT_MISO 12
