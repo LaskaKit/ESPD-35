@@ -1,22 +1,24 @@
-/*
- * Connect the SD card to the following pins:
- *
- * SD Card | ESP32
- *    D2       -
- *    D3       SS
- *    CMD      MOSI
- *    VSS      GND
- *    VDD      3.3V
- *    CLK      SCK
- *    VSS      GND
- *    D0       MISO
- *    D1       -
- */
+/* Demo software pro LaskaKit ESPink-42"
+ * Email:podpora@laskakit.cz
+ * Web:laskakit.cz
+ * 
+ * in User_Setup.h set ESP32 Dev board pinout to 
+ * TFT_MISO 12
+ * TFT_MOSI 13
+ * TFT_SCLK 14
+ * TFT_CS   15  // Chip select control pin
+ * TFT_DC   32  // Data Command control pin
+ * TFT_RST  -1  // Reset pin (could connect to Arduino RESET pin)
+ * TFT_BL   33  // LED back-light (required for M5Stack)
+ * For Arduino IDE #define SPI_FREQUENCY  20000000
+*/
+
+
 #include "FS.h"
 #include "SD.h"
 #include "SPI.h"
 
-#define SD_CS_PIN     4
+#define SD_CS_PIN     27
 
 SPIClass SDSPI(HSPI);
 
