@@ -1,10 +1,10 @@
-/* LasKKit ESPDisplay for Weather Station. 
+/* LaskaKit ESPDisplay for Weather Station. 
  * Thingspeak edition
  * Read Temperature, Humidity and pressure from Thingspeak and show on the display
  * For settings see config.h
  * 
  * Email:podpora@laskakit.cz
- * Web:laskarduino.cz
+ * Web:laskakit.cz
  * 
  * in User_Setup.h set ESP32 Dev board pinout to 
  * TFT_MISO 12
