@@ -1,16 +1,14 @@
-/* Demo software pro LaskaKit ESPD-3,5" 320x480, ILI9488 
+/* Display only test pro LaskaKit ESPD-3.5" 320x480, ILI9488 
+ * examle from TFT_eSPI library is used
+ * 
+ * How to steps:
+ * 1. Copy file Setup300_ILI9488_ESPD-3_5.h from https://github.com/LaskaKit/ESPD-35/tree/main/SW to Arduino/libraries/TFT_eSPI/User_Setups/
+ * 2. in Arduino/libraries/TFT_eSPI/User_Setup_Select.h 
+      a. comment: #include <User_Setup.h> 
+      b. add: #include <User_Setups/Setup300_ILI9488_ESPD-3_5.h>  // Setup file for LaskaKit ESPD-3.5" 320x480, ILI9488 
+ * 
  * Email:podpora@laskakit.cz
  * Web:laskakit.cz
- * 
- * in User_Setup.h set ESP32 Dev board pinout to 
- * TFT_MISO 12
- * TFT_MOSI 13
- * TFT_SCLK 14
- * TFT_CS   15  // Chip select control pin
- * TFT_DC   32  // Data Command control pin
- * TFT_RST  -1  // Reset pin (could connect to Arduino RESET pin)
- * TFT_BL   33  // LED back-light (required for M5Stack)
- * For Arduino IDE #define SPI_FREQUENCY  20000000
 */
 
 // Delay between demo pages
