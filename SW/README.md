@@ -1,6 +1,6 @@
 # How to make display work
 
-1. Download [CH341SER.EXE](http://www.wch-ic.com/search?q=CH340&t=downloads) and install it.
+1. Download [CH343SER.EXE](http://www.wch-ic.com/search?t=all&q=CH9102) and install it.
 
 2. Connect display to your PC and turn it on with button on the side of the device (**single press to turn on, long press to turn off**).
 

@@ -1,6 +1,6 @@
 # Jak pracovat s displejem
 
-1. Stáhnout [CH341SER.EXE](http://www.wch-ic.com/search?q=CH340&t=downloads) a nainstalovat. Návod i na našem [blogu](https://blog.laskakit.cz/instalace-ovladace-prevodniku-usb-na-uart-ch340/).
+1. Stáhnout [CH343SER.EXE](http://www.wch-ic.com/search?t=all&q=CH9102) a nainstalovat. Návod i na našem [blogu](https://blog.laskakit.cz/instalace-ovladace-prevodniku-usb-na-uart-ch340/).
 
 2. Zapojit displej do PC a zapnout tlačítkem na boku (**stisk pro zapnutí, dlouhý stisk pro vypnutí**).
 
