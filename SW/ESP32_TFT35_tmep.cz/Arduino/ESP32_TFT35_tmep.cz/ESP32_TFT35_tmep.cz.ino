@@ -1,4 +1,5 @@
-/* LaskaKit ESPDisplay for Weather Station. 
+/* 
+ * LaskaKit ESPDisplay for Weather Station. 
  * Thingspeak edition
  * Read Temperature, Humidity and pressure from Thingspeak and show on the display
  * For settings see config.h

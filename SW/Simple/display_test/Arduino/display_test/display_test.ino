@@ -1,5 +1,6 @@
-/* Display only test pro LaskaKit ESPD-3.5" 320x480, ILI9488 
- * examle from TFT_eSPI library is used
+/* 
+ * Display only test for LaskaKit ESPD-3.5" 320x480, ILI9488 
+ * example from TFT_eSPI library is used
  * 
  * How to steps:
  * 1. Copy file Setup300_ILI9488_ESPD-3_5.h from https://github.com/LaskaKit/ESPD-35/tree/main/SW to Arduino/libraries/TFT_eSPI/User_Setups/

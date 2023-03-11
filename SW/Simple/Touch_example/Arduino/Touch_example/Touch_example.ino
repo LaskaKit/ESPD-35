@@ -1,8 +1,14 @@
-/* Touch_example 
- * 
+/* Touch test for LaskaKit ESPD-3.5" 320x480, ILI9488
+ *
+ * How to steps:
+ * 1. Copy file Setup300_ILI9488_ESPD-3_5.h from https://github.com/LaskaKit/ESPD-35/tree/main/SW to Arduino/libraries/TFT_eSPI/User_Setups/
+ * 2. in Arduino/libraries/TFT_eSPI/User_Setup_Select.h
+      a. comment: #include <User_Setup.h>
+      b. add: #include <User_Setups/Setup300_ILI9488_ESPD-3_5.h>  // Setup file for LaskaKit ESPD-3.5" 320x480, ILI9488
+ *
  * Email:podpora@laskakit.cz
- * Web:laskarduino.cz
- */
+ * Web:laskakit.cz
+*/
 
 #include <TFT_eSPI.h> // Hardware-specific library
 #include <SPI.h>
