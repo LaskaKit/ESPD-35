@@ -6,16 +6,6 @@
  * Email:podpora@laskakit.cz
  * Web:laskakit.cz
  * 
- * in User_Setup.h set ESP32 Dev board pinout to 
- * TFT_MISO 12
- * TFT_MOSI 13
- * TFT_SCLK 14
- * TFT_CS   15  // Chip select control pin
- * TFT_DC   32  // Data Command control pin
- * TFT_RST  -1  // Reset pin (could connect to Arduino RESET pin)
- * TFT_BL   33  // LED back-light (required for M5Stack)
- * For Arduino IDE #define SPI_FREQUENCY  20000000
- * 
  * Miles Burton DS18B20 library
  * https://github.com/milesburton/Arduino-Temperature-Control-Library
  */
@@ -32,7 +22,7 @@
 #include <ESP32AnalogRead.h>
 //#include "squares.h"              // Gauges bigger, not fully visible
 #include "squares1.h"               // Gauges smaller, fully visible
-#include "config.h"              // change to config.h and fill the file.
+#include "config.h"                 // change to config.h and fill the file.
 #include "iot_iconset_16x16.h"      // WIFI and battery icons
 
 #define ADC 34                      // Battery voltage mesurement
