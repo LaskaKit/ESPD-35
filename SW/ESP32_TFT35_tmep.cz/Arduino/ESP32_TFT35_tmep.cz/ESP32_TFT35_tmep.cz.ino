@@ -1,10 +1,10 @@
-/* LasKKit ESPDisplay for Weather Station. 
+/* LaskaKit ESPDisplay for Weather Station. 
  * Thingspeak edition
  * Read Temperature, Humidity and pressure from Thingspeak and show on the display
  * For settings see config.h
  * 
  * Email:podpora@laskakit.cz
- * Web:laskarduino.cz
+ * Web:laskakit.cz
  * 
  * Miles Burton DS18B20 library
  * https://github.com/milesburton/Arduino-Temperature-Control-Library
