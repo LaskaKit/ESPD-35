@@ -6,6 +6,7 @@
  * 2. in Arduino/libraries/TFT_eSPI/User_Setup_Select.h
       a. comment: #include <User_Setup.h>
       b. add: #include <User_Setups/Setup300_ILI9488_ESPD-3_5.h>  // Setup file for LaskaKit ESPD-3.5" 320x480, ILI9488
+   3. Add lv_conf.h into the Arduino Libraries directory (most often Documents/Arduino/libraries) next to the lvgl folder
  *
  * Email:podpora@laskakit.cz
  * Web:laskakit.cz
