@@ -322,6 +322,8 @@ void printLastUpdate() {
 }
 
 void printValues() {
+  display.setTextSize(1);
+  display.setTextFont(7);
   display.setTextDatum(TL_DATUM);
   display.setTextColor(TFT_WHITE, 0x640E);
   display.setTextPadding(display.textWidth("-99.99`C", 4));
