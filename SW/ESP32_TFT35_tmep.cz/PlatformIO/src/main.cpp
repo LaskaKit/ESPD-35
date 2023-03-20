@@ -11,7 +11,6 @@
  * https://github.com/milesburton/Arduino-Temperature-Control-Library
  */
 
-#include <NTPClient.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <Arduino.h>
@@ -21,6 +20,8 @@
 #include <ArduinoJson.h>            // JSON library
 #include <Adafruit_SHT4x.h>
 #include <ESP32AnalogRead.h>
+#include "time.h"
+#include "sntp.h"
 //#include "squares.h"              // Gauges bigger, not fully visible
 #include "squares1.h"               // Gauges smaller, fully visible
 #include "config.h"                 // change to config.h and fill the file.
@@ -86,14 +87,16 @@
 #define REFRESH_RATE_MS 60*1000
 #define REFRESH_RATE_SHT40_MS 60*1000
 
+// Time settings
+const char* ntpServer1 = "pool.ntp.org";
+const char* ntpServer2 = "time.nist.gov";
+// A list of rules for your zone could be obtained from https://github.com/esp8266/Arduino/blob/master/cores/esp8266/TZ.h
+const char* time_zone = "CET-1CEST,M3.5.0,M10.5.0/3";
+
 TFT_eSPI display = TFT_eSPI();       // Invoke custom library
 Adafruit_SHT4x sht4 = Adafruit_SHT4x();
 ESP32AnalogRead adc;
-WiFiUDP ntpUDP;
-// You can specify the time server pool and the offset (in seconds, can be
-// changed later with setTimeOffset() ). Additionally you can specify the
-// update interval (in milliseconds, can be changed using setUpdateInterval() ).
-NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 3600, 60000);
+
 
 float temp;
 float m_volt;
@@ -240,14 +243,18 @@ uint8_t getIntBattery() {
   else return 0;
 }
 
-void printTime(int hours, int minutes) {
+void printTime() {
   char buff[6];
+  struct tm timeinfo;
+  if(!getLocalTime(&timeinfo))
+  {
+    return;
+  }
   display.setTextSize(1);
   display.setTextFont(7);
   display.setTextColor(TFT_WHITE, TFT_BLACK);
   display.setTextDatum(TC_DATUM);
-  timeClient.update();
-  sprintf(buff, "%02d:%02d", hours, minutes);
+  sprintf(buff, "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
   display.drawString(buff, (TFT_DISPLAY_RESOLUTION_X / 2), (TFT_TIME_Y_OFFSET));
 }
 
@@ -419,6 +426,9 @@ void setup() {
   ledcAttachPin(TFT_LED, 1);          // ledPin, ledChannel
   ledcWrite(1, TFT_LED_PWM);          // dutyCycle 0-255
 
+  // Time config
+  configTzTime(time_zone, ntpServer1, ntpServer2);
+
   // setting ADC
   adc.attach(ADC);
   display.begin();
@@ -449,13 +459,12 @@ void setup() {
   display.pushImage(TFT_SQUARE_POS3_X, TFT_SQUARE_POS3_Y, TFT_SQUARE_SIZE, TFT_SQUARE_SIZE, press_pic);
   display.pushImage(TFT_SQUARE_POS4_X, TFT_SQUARE_POS4_Y, TFT_SQUARE_SIZE, TFT_SQUARE_SIZE, hum_pic);
 
-  timeClient.begin();
   wifiSignal = getWifiStrength();
   readChannel();
   printLastUpdate();
   printBattery();
   printWifi();
-  printTime(timeClient.getHours(), timeClient.getMinutes());
+  printTime();
   printValues();
 }
 
@@ -473,7 +482,7 @@ void loop() {
     printLastUpdate();
     printBattery();
     printWifi();
-    printTime(timeClient.getHours(), timeClient.getMinutes());
+    printTime();
     printValues();
   }
 }
