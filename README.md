@@ -16,6 +16,8 @@ The USB-C connector is used for both programming and charging the Lipolka. We al
 
 To measure the battery voltage, we also fitted a voltage divider connected to the battery and GPIO34 - don't forget to power the solder bridge.
 
+**You can buy ESPD35 on https://www.laskakit.cz/laskakit-espd-35-esp32-3-5-tft-ili9488-touch/**
+
 We have prepared some sample codes: https://github.com/LaskaKit/ESPD-35/tree/main/SW 
 
 And also a box to print on a 3D printer: https://github.com/LaskaKit/ESPD-35/tree/main/3D
