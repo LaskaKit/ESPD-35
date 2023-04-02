@@ -22,6 +22,8 @@ Na desce jsme nechali i místo pro [580mAh Lipol akumulátor](https://www.laskak
 
 K měření napětí akumulátoru jsme osadili i napěťový dělič připojený k akumulátoru a GPIO34 - nezapomeň propájet pájecí most. 
 
+**Deska je dostupná na https://www.laskakit.cz/laskakit-espd-35-esp32-3-5-tft-ili9488-touch/**
+
 Připravili jsme několik vzorových kódů: https://github.com/LaskaKit/ESPD-35/tree/main/SW
 
 A také krabičku k vytištěnní na 3D tiskárně: https://github.com/LaskaKit/ESPD-35/tree/main/3D
