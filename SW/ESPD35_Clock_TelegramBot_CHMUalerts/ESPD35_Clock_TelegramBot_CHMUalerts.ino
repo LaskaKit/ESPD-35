@@ -1,29 +1,31 @@
 /*
-ESPD-3.5" - using of telegram bot and clock with ESPD-35
-Written by chiptron.cz for laskakit.cz (2023)
+* ESPD-3.5" - using of telegram bot and clock with ESPD-35
+* Written by chiptron.cz for laskakit.cz (2023)
+* ESPD35: https://www.laskakit.cz/laskakit-espd-35-esp32-3-5-tft-ili9488-touch/
+* TMEP.cz
 
-Used library:
-AsyncTelegram - https://github.com/cotestatnt/AsyncTelegram
-Font convertor: https://oleddisplay.squix.ch/
-ArduinoJson: https://arduinojson.org/
-TFT_eSPI - https://github.com/Bodmer/TFT_eSPI
-Settings of TFT_eSPI:
-in User_Setup.h (TFT_eSPI) set ESP32 Dev board pinout to 
-// Define driver
-#define ILI9488_DRIVER
-// The hardware SPI can be mapped to any pins
-#define TFT_MISO 12
-#define TFT_MOSI 13
-#define TFT_SCLK 14
-#define TFT_CS   15  // Chip select control pin
-#define TFT_DC   32  // Data Command control pin
-#define TFT_RST  -1
-#define TFT_BL   33  // LED back-light
-// Backlight
-#define TFT_BL   33          
-#define TFT_BACKLIGHT_ON HIGH
-// SPI freq
-#define SPI_FREQUENCY  20000000
+* Used library:
+* AsyncTelegram - https://github.com/cotestatnt/AsyncTelegram
+* Font convertor: https://oleddisplay.squix.ch/
+* ArduinoJson: https://arduinojson.org/
+* TFT_eSPI - https://github.com/Bodmer/TFT_eSPI
+* Settings of TFT_eSPI:
+* in User_Setup.h (TFT_eSPI) set ESP32 Dev board pinout to 
+* // Define driver
+* #define ILI9488_DRIVER
+* // The hardware SPI can be mapped to any pins
+* #define TFT_MISO 12
+* #define TFT_MOSI 13
+* #define TFT_SCLK 14
+* #define TFT_CS   15  // Chip select control pin
+* #define TFT_DC   32  // Data Command control pin
+* #define TFT_RST  -1
+* #define TFT_BL   33  // LED back-light
+* // Backlight
+* #define TFT_BL   33          
+* #define TFT_BACKLIGHT_ON HIGH
+* // SPI freq
+* #define SPI_FREQUENCY  20000000
 */
 
 #include <WiFi.h>
@@ -59,7 +61,7 @@ const char* token = "zzz";   	// REPLACE myToken WITH YOUR TELEGRAM BOT TOKEN
 
 // NTP
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "0.cz.pool.ntp.org", 7200, 60000);
+NTPClient timeClient(ntpUDP, "0.cz.pool.ntp.org", 7200, 60000); // Czech NTP server
 
 // Telegram BOT
 AsyncTelegram myBot;
