@@ -21,6 +21,10 @@
  */
 #include "FT6236.h"
 
+// Set your version of display (V2.0 uses FT6234 touch driver and V2.1 uses FT5436)
+#define V2_0
+//#define V2_1
+
 // TFT SPI
 #define TFT_LED 33			// TFT backlight pin
 #define TFT_LED_PWM 100 	// dutyCycle 0-255 last minimum was 15
@@ -44,7 +48,12 @@ void setup(void)
     {
         Serial.println("Unable to start the capacitive touchscreen.");
     }
-	ts.setRotation(1);
+  #ifdef V2_0
+    ts.setRotation(1);
+  #endif
+  #ifdef V2_1
+    ts.setRotation(3);
+  #endif
 	ledcSetup(1, 5000, 8);		 // ledChannel, freq, resolution
 	ledcAttachPin(TFT_LED, 1); // ledPin, ledChannel
 	ledcWrite(1, TFT_LED_PWM); // dutyCycle 0-255

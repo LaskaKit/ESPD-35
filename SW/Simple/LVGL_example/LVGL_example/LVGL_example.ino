@@ -17,6 +17,10 @@
 #include <TFT_eSPI.h>
 #include "FT6236.h"
 
+// Set your version of display (V2.0 uses FT6234 touch driver and V2.1 uses FT5436)
+#define V2_0
+//#define V2_1
+
 /* ADC */
 #define UPDATE_INTERVAL 1000   // 1 s
 #define MEAS_POINTS  30
@@ -227,7 +231,12 @@ void setup()
   {
     Serial.println("Unable to start the capacitive touchscreen.");
   }
-  ts.setRotation(3);
+  #ifdef V2_0
+    ts.setRotation(1);
+  #endif
+  #ifdef V2_1
+    ts.setRotation(3);
+  #endif
 
   lv_disp_draw_buf_init(&draw_buf, buf, NULL, screenWidth * 10);
 
