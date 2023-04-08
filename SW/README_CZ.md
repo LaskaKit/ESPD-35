@@ -21,7 +21,8 @@ Musí být pouze zkopírován do složky knihovny: Arduino\libraries\TFT_eSPI\Us
    
    ![User_setup](../img/User_setup.png)
 
-6. Nahrát kód.
+6. Definovat verzi hardware v kódu pro příklady s funkcí dotyku.
+7. Nahrát kód.
 ## Platform IO
 1. Stáhnout Github repository a otevřít příklad, který chcete zkusit ze složky [SW](../SW).
 2. Otevřít příklad pomocí Arduino IDE a nastavit správný COM port a typ desky. COM port by měl být nastaven automaticky.
@@ -30,4 +31,5 @@ Musí být pouze zkopírován do složky knihovny: Arduino\libraries\TFT_eSPI\Us
     <p align="center">
     <img src="../img/PlatformIO_set.png" height="500">
     </p>
-5. Nahrát kód.
+5. Definovat verzi hardware v kódu pro příklady s funkcí dotyku.
+6. Nahrát kód.

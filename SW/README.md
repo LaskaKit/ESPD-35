@@ -21,7 +21,8 @@ To use it, you need to copy this file to folder with your libraries: Arduino\lib
    
    ![User_setup](../img/User_setup.png)
 
-2. Upload the code.
+2. Define version of hardware in code, for examples with touch functionality.
+3. Upload the code.
 ## Platform IO
 1. Download Github repository and look for project you want to try in [SW](https://github.com/LaskaKit/ESPD-35/tree/main/SW) folder.
 2. Open example with Platform IO. COM port should be set automaticaly.
@@ -30,4 +31,5 @@ To use it, you need to copy this file to folder with your libraries: Arduino\lib
     <p align="center">
     <img src="../img/PlatformIO_set.png" height="500">
     </p>
-5. Upload the code.
+5. Define version of hardware in code, for examples with touch functionality.
+6. Upload the code.
