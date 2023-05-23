@@ -54,6 +54,10 @@
 // CHMU Alerts from TMEP.cz 
 #include <ArduinoJson.h>
 
+// TFT SPI
+#define TFT_LED 33			// TFT backlight pin
+#define TFT_LED_PWM 100 	// dutyCycle 0-255 last minimum was 15
+
 // Wi-Fi credentials
 const char *ssid     = "xxx";
 const char *password = "yyy";
@@ -211,6 +215,10 @@ void updtDisplay()
 
 void displayInit()
 {
+  // configure backlight LED PWM functionalitites
+  ledcSetup(1, 5000, 8);              // ledChannel, freq, resolution
+  ledcAttachPin(TFT_LED, 1);          // ledPin, ledChannel
+  ledcWrite(1, TFT_LED_PWM);          // dutyCycle 0-255
   tft.init();
   tft.setRotation(1);
 }
