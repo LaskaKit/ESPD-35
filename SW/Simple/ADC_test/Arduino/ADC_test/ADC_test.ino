@@ -17,7 +17,7 @@
 #include <SPI.h>
 
 #define ADC 34                      // Battery voltage mesurement
-#define deviderRatio 1.3
+#define deviderRatio 1.7693877551  // Voltage devider ratio on ADC pin 1MOhm + 1.3MOhm
 
 // TFT SPI
 #define TFT_LED 33			// TFT backlight pin

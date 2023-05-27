@@ -31,7 +31,7 @@
 #define SDA 21
 #define SCL 22
 #define USE_STATIC_IP false         // if we want to use a static IP address
-#define deviderRatio 1.3
+#define deviderRatio 1.7693877551  // Voltage devider ratio on ADC pin 1MOhm + 1.3MOhm
 
 // if we want to use a static IP address
 #if USE_STATIC_IP

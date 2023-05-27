@@ -1,14 +1,12 @@
 /* 
  * LaskaKit ESPDisplay for Weather Station. 
  * Thingspeak edition
- * Read Temperature, Humidity and pressure from Thingspeak and show on the display
+ * Read Temperature, Humidity and pressure from TMEP.cz and show on the display
  * For settings see config.h
  * 
  * Email:podpora@laskakit.cz
  * Web:laskakit.cz
  * 
- * Miles Burton DS18B20 library
- * https://github.com/milesburton/Arduino-Temperature-Control-Library
  */
 
 #include <WiFi.h>
@@ -32,7 +30,7 @@
 #define SDA 21
 #define SCL 22
 #define USE_STATIC_IP false         // if we want to use a static IP address
-#define deviderRatio 1.3
+#define deviderRatio 1.7693877551  // Voltage devider ratio on ADC pin 1MOhm + 1.3MOhm
 
 // if we want to use a static IP address
 #if USE_STATIC_IP
