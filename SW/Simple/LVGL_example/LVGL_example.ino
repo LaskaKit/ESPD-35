@@ -13,7 +13,6 @@
 */
 
 #include <lvgl.h>
-#include <ESP32AnalogRead.h>
 #include <TFT_eSPI.h>
 #include "FT6236.h"
 
@@ -26,7 +25,6 @@
 #define MEAS_POINTS  30
 #define ADC 34  // Battery voltage mesurement
 #define deviderRatio 1.7693877551  // Voltage devider ratio on ADC pin 1MOhm + 1.3MOhm
-ESP32AnalogRead adc;
 
 #define POWER_OFF_PIN 17
 
@@ -133,7 +131,7 @@ void ADCUpdate()
       values[k] = values[k + 1];
       lv_chart_set_next_value(chart, ser, values[k]);
     }
-    values[MEAS_POINTS] = adc.readVoltage() * deviderRatio * 1000;
+    values[MEAS_POINTS] = analogReadMilliVolts(ADC) * deviderRatio;
     lv_chart_set_next_value(chart, ser, values[MEAS_POINTS]);
   }
 }
@@ -219,7 +217,6 @@ void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data)
 void setup() 
 {
   Serial.begin(115200); /* prepare for possible serial debug */
-  adc.attach(ADC);
   lv_init();
   ledcSetup(1, 5000, 8);      // ledChannel, freq, resolution
   ledcAttachPin(TFT_LED, 1);  // ledPin, ledChannel

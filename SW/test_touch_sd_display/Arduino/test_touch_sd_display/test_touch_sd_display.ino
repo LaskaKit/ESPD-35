@@ -16,7 +16,6 @@
 #include <FS.h>
 #include <SD.h>
 #include <SPI.h>
-#include <ESP32AnalogRead.h>
 #include <Arduino.h>
 /*
  * Chip used in board is FT5436
@@ -51,7 +50,6 @@
 
 FT6236 ts = FT6236(480, 320);	// Create object for Touch library
 TFT_eSPI tft = TFT_eSPI();  	// Invoke custom library with default width and height
-ESP32AnalogRead adc;			// Create object for adc library
 
 uint32_t runTime = 0;			// Variable for measuring Screen test time
 
@@ -458,7 +456,7 @@ void printVoltage()
 	tft.setTextColor(TFT_WHITE, TFT_BLACK);
 	tft.setTextDatum(TR_DATUM);
 	tft.setTextPadding(tft.textWidth("9.99 V", 2));
-	tft.drawString(String(adc.readVoltage() * deviderRatio) + " V", TFT_RES_X - 3, 0);
+	tft.drawString(String(analogReadMilliVolts(ADC_PIN) * deviderRatio / 1000) + " V", TFT_RES_X - 3, 0);
 }
 
 // Print initial screen
@@ -726,7 +724,6 @@ void setup()
 	ledcWrite(1, TFT_LED_PWM); // dutyCycle 0-255
 
 	randomSeed(analogRead(0)); // get random number for Screen test
-	adc.attach(ADC_PIN);
 	Serial.begin(115200);
 	if (!ts.begin(40)) 		  // 40 in this case represents the sensitivity. Try higer or lower for better response.
 	{

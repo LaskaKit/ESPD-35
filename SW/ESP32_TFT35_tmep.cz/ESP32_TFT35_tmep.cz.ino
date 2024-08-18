@@ -19,7 +19,6 @@
 #include <Wire.h>
 #include <ArduinoJson.h>            // JSON library
 #include <Adafruit_SHT4x.h>
-#include <ESP32AnalogRead.h>
 #include "time.h"
 #include "sntp.h"
 //#include "squares.h"              // Gauges bigger, not fully visible
@@ -95,7 +94,6 @@ const char* time_zone = "CET-1CEST,M3.5.0,M10.5.0/3";
 
 TFT_eSPI display = TFT_eSPI();       // Invoke custom library
 Adafruit_SHT4x sht4 = Adafruit_SHT4x();
-ESP32AnalogRead adc;
 
 
 float temp;
@@ -228,7 +226,7 @@ uint8_t getWifiStrength() {
 }
 
 uint8_t getIntBattery() {
-  d_volt = adc.readVoltage() * deviderRatio;
+  d_volt = analogReadMilliVolts(ADC) * deviderRatio / 1000;
   Serial.println("Battery voltage: " + String(d_volt) + "V");
 
   // Měření napětí baterie | Battery voltage measurement
@@ -431,8 +429,6 @@ void setup() {
   // Time config
   configTzTime(time_zone, ntpServer1, ntpServer2);
 
-  // setting ADC
-  adc.attach(ADC);
   display.begin();
   display.setRotation(0);
   display.fillScreen(TFT_BLACK);
