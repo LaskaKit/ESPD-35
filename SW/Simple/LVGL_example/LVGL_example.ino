@@ -218,8 +218,7 @@ void setup()
 {
   Serial.begin(115200); /* prepare for possible serial debug */
   lv_init();
-  ledcSetup(1, 5000, 8);      // ledChannel, freq, resolution
-  ledcAttachPin(TFT_LED, 1);  // ledPin, ledChannel
+  ledcAttach(DISPLAY_LED, 5000, 8);
   ledcWrite(1, TFT_LED_PWM);  // dutyCycle 0-255
   tft.begin();                /* TFT init */
   tft.setRotation(3);         /* Landscape orientation, flipped */
