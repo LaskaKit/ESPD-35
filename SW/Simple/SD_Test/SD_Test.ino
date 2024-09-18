@@ -199,9 +199,9 @@ void SDtest()
 
 void setup()
 {
-	ledcSetup(1, 5000, 8);	   // ledChannel, freq, resolution
-	ledcAttachPin(TFT_LED, 1); // ledPin, ledChannel
-	ledcWrite(1, TFT_LED_PWM); // dutyCycle 0-255
+	// configure backlight LED PWM functionalitites
+  ledcAttach(TFT_LED, 1000, 8);
+  ledcWrite(1, TFT_LED_PWM);
 	displayInit();
 	SDtest();
 }

@@ -719,8 +719,8 @@ void I2CTest()
 void setup()
 {
 	// configure backlight LED PWM functionalitites
-	ledcAttach(TFT_LED, 5000, 8);
-	ledcWrite(1, TFT_LED_PWM); // dutyCycle 0-255
+  ledcAttach(TFT_LED, 1000, 8);
+  ledcWrite(1, TFT_LED_PWM);
 
 	randomSeed(analogRead(0)); // get random number for Screen test
 	Serial.begin(115200);

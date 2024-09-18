@@ -94,8 +94,9 @@ void setup() {
 
   tft.begin();        /* TFT init */
   tft.setRotation(3); /* Landscape orientation, flipped */
-  ledcAttach(DISPLAY_LED, 5000, 8);
-  ledcWrite(1, TFT_LED_PWM);  // dutyCycle 0-255
+	// configure backlight LED PWM functionalitites
+  ledcAttach(TFT_LED, 1000, 8);
+  ledcWrite(1, TFT_LED_PWM);
 
   lv_disp_draw_buf_init(&draw_buf, buf, NULL, screenWidth * screenHeight / 10);
 

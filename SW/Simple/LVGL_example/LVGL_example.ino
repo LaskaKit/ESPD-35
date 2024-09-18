@@ -218,8 +218,9 @@ void setup()
 {
   Serial.begin(115200); /* prepare for possible serial debug */
   lv_init();
-  ledcAttach(DISPLAY_LED, 5000, 8);
-  ledcWrite(1, TFT_LED_PWM);  // dutyCycle 0-255
+	// configure backlight LED PWM functionalitites
+  ledcAttach(TFT_LED, 1000, 8);
+  ledcWrite(1, TFT_LED_PWM);
   tft.begin();                /* TFT init */
   tft.setRotation(3);         /* Landscape orientation, flipped */
 

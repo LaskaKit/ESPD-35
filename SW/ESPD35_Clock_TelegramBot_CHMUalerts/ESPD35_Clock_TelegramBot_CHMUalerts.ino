@@ -215,9 +215,10 @@ void updtDisplay()
 
 void displayInit()
 {
-  // configure backlight LED PWM functionalitites
-  ledcAttach(DISPLAY_LED, 5000, 8);
-  ledcWrite(1, TFT_LED_PWM);          // dutyCycle 0-255
+	// configure backlight LED PWM functionalitites
+  ledcAttach(TFT_LED, 1000, 8);
+  ledcWrite(1, TFT_LED_PWM);
+  
   tft.init();
   tft.setRotation(1);
 }
