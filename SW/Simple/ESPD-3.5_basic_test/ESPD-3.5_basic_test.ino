@@ -17,12 +17,18 @@
 #include "bitmaps.h"
 #include "OpenSansSB_40px.h"
 
+#define TFT_LED          33      // TFT backlight pin
+#define TFT_LED_PWM      100     // dutyCycle 0-255 last minimum was 15
+
 TFT_eSPI tft = TFT_eSPI();
 
 void setup()
 {
   tft.init();
   tft.setRotation(1);
+  
+  ledcAttach(TFT_LED, 1000, 8);
+  ledcWrite(1, TFT_LED_PWM);
 }
 void loop()
 { 
