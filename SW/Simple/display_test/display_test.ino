@@ -313,8 +313,11 @@ void drawEndScreen() {
 
 void setup() {
 	// configure backlight LED PWM functionalitites
-  ledcAttach(TFT_LED, 1000, 8);
-  ledcWrite(1, TFT_LED_PWM);
+  //ledcAttach(TFT_LED, 1000, 8);
+  //ledcWrite(1, TFT_LED_PWM);
+  pinMode(TFT_LED, OUTPUT);
+  digitalWrite(TFT_LED, HIGH);
+  
 
   randomSeed(analogRead(0));
   Serial.begin(115200);
