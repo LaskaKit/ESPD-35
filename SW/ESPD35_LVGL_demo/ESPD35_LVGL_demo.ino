@@ -18,8 +18,8 @@
 #include "FT6236.h"
 
 // Set your version of display (V2.0 uses FT6234 touch driver and V2.1 uses FT5436)
-#define V2_0
-//#define V2_1
+//#define V2_0
+#define V2_1
 
 // TFT SPI
 #define TFT_LED 33       // TFT backlight pin
