@@ -15,9 +15,9 @@
     ![ArduinoIDE_set](../img/ArduinoIDE_set.png)
 
 3. Download necessary libraries.
-4. You always need to adjust TFT_eSPI library to specific display. We  already prepared configuration file for this display ([Setup300_ILI9488_ESPD-3_5.h](Setup300_ILI9488_ESPD-3_5.h)).
+4. You always need to adjust TFT_eSPI library to specific display. We  already prepared configuration file for this display ([Setup300_ILI9488_ESPD-3_5_v2.h](Setup300_ILI9488_ESPD-3_5_v2.h)) or for version v3 and above ([Setup300_ILI9488_ESPD-3_5_v3.h](Setup300_ILI9488_ESPD-3_5_v3.h)).
 To use it, you need to copy this file to folder with your libraries: Arduino\libraries\TFT_eSPI\User_Setups.
-1. In file Arduino\libraries\TFT_eSPI\User_Setup_Select.h you need to add this line: `#include <User_Setups/Setup300_ILI9488_ESPD-3_5.h>` into this section: `#ifndef USER_SETUP_LOADED` and comment `#include <User_Setup.h>` as shown in the picture and save it.
+1. In file Arduino\libraries\TFT_eSPI\User_Setup_Select.h you need to add this line: `#include <User_Setups/Setup300_ILI9488_ESPD-3_5_v2.h>` or for version v3 and above `#include <User_Setups/Setup300_ILI9488_ESPD-3_5_v3.h>`. into this section: `#ifndef USER_SETUP_LOADED` and comment `#include <User_Setup.h>` as shown in the picture and save it.
    
    ![User_setup](../img/User_setup.png)
 

@@ -15,9 +15,9 @@
     ![ArduinoIDE_set](../img/ArduinoIDE_set.png)
 
 3. Stáhnout nezbytné knihovny.
-4. Knihovnu TFE_eSPI je vždy potřeba nastavit podle konkrétního displeje. Pro tento displej je už konfigurační soubor připravený ([Setup300_ILI9488_ESPD-3_5.h](Setup300_ILI9488_ESPD-3_5.h)).
+4. Knihovnu TFE_eSPI je vždy potřeba nastavit podle konkrétního displeje. Pro tento displej je už konfigurační soubor připravený ([Setup300_ILI9488_ESPD-3_5_v2.h](Setup300_ILI9488_ESPD-3_5_v2.h)) nebo pro verze v3 ([Setup300_ILI9488_ESPD-3_5_v3.h](Setup300_ILI9488_ESPD-3_5_v3.h)).
 Musí být pouze zkopírován do složky knihovny: Arduino\libraries\TFT_eSPI\User_Setups.
-5. V souboru Arduino\libraries\TFT_eSPI\User_Setup_Select.h je poté potřeba přidat řádek: `#include <User_Setups/Setup300_ILI9488_ESPD-3_5.h>` do sekce: `#ifndef USER_SETUP_LOADED` a zakomentovat `#include <User_Setup.h>`, jak je znázorněno v obrázku níže.
+5. V souboru Arduino\libraries\TFT_eSPI\User_Setup_Select.h je poté potřeba přidat řádek: `#include <User_Setups/Setup300_ILI9488_ESPD-3_5.h>` nebo pro verze v3 `#include <User_Setups/Setup300_ILI9488_ESPD-3_5_v3.h>` do sekce: `#ifndef USER_SETUP_LOADED` a zakomentovat `#include <User_Setup.h>`, jak je znázorněno v obrázku níže.
    
    ![User_setup](../img/User_setup.png)
 

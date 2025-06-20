@@ -1,12 +1,12 @@
 // Konfigurace pro LaskaKit ESPD-3,5"
 // Nakopirovat do slozky Arduino\libraries\TFT_eSPI\User_Setups
-// Do souboru Arduino\libraries\TFT_eSPI\User_Setup_Select.h pridat radek: #include <User_Setups/Setup300_ILI9488_ESPD-3_5.h> do sekce #ifndef USER_SETUP_LOADED
+// Do souboru Arduino\libraries\TFT_eSPI\User_Setup_Select.h pridat radek: #include <User_Setups/Setup303_ILI9488_ESPD-3_5_v2.h> do sekce #ifndef USER_SETUP_LOADED
 #define USER_SETUP_ID 300
-
+#define USER_SETUP_INFO "LaskaKit ESPD-3.5 v2"
 #define ILI9488_DRIVER
 
-// #define TFT_BL   33            // LED back-light control pin
-// #define TFT_BACKLIGHT_ON HIGH  // Level to turn ON back-light (HIGH or LOW)
+#define TFT_BL   33            // LED back-light control pin
+#define TFT_BACKLIGHT_ON HIGH  // Level to turn ON back-light (HIGH or LOW)
 
 #define TFT_MISO 12
 #define TFT_MOSI 13
@@ -26,17 +26,6 @@
 
 #define SMOOTH_FONT
 
-
-// #define SPI_FREQUENCY   1000000
-// #define SPI_FREQUENCY   5000000
-// #define SPI_FREQUENCY  10000000
-// #define SPI_FREQUENCY  20000000
-// #define SPI_FREQUENCY  27000000
-// #define SPI_FREQUENCY  40000000
- #define SPI_FREQUENCY  55000000 // for v2 only
-// #define SPI_FREQUENCY  80000000
+#define SPI_FREQUENCY  55000000
 #define SPI_READ_FREQUENCY  20000000
 #define SPI_TOUCH_FREQUENCY  2500000
-
-
-// #define SUPPORT_TRANSACTIONS
