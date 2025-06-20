@@ -1,10 +1,10 @@
 ### Version 3.0
-- New uc ESP32-S3
+- New µc ESP32-S3-N16R8
 - IPS Display
 - New side GPIO connector
-- LED?
-- SHT40
-- Fuel Gauge
+- added Temperature and Humidity SHT40 sensor
+- (optional) added Inertial Measurement Unit BMI270
+- (optional) I2S DAC and amplifier MAX98357A
 #### Version 2.3
 - Auto ON jumper added
 #### Version 2.0
