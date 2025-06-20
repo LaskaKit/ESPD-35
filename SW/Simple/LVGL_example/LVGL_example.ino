@@ -1,32 +1,54 @@
-/*
- * LVGL example for LaskaKit ESPD-3.5" 320x480, ILI9488
- *
+/* 
+ * LVGL example for LaskaKit ESPD-3.5" 320x480, ILI9488 
+ * example from TFT_eSPI library is used
+ * 
  * How to steps:
- * 1. Copy file Setup300_ILI9488_ESPD-3_5.h from https://github.com/LaskaKit/ESPD-35/tree/main/SW to Arduino/libraries/TFT_eSPI/User_Setups/
- * 2. in Arduino/libraries/TFT_eSPI/User_Setup_Select.h
-      a. comment: #include <User_Setup.h>
-      b. add: #include <User_Setups/Setup300_ILI9488_ESPD-3_5.h>  // Setup file for LaskaKit ESPD-3.5" 320x480, ILI9488
-   3. Add lv_conf.h into the Arduino Libraries directory (most often Documents/Arduino/libraries) next to the lvgl folder
+ * 1. Copy file from https://github.com/LaskaKit/ESPD-35/tree/main/SW to Arduino/libraries/TFT_eSPI/User_Setups/
+ *    - for version v2.3 and before:  Setup300_ILI9488_ESPD-3_5_v2.h 
+ *    - for version v3 and above:     Setup303_ILI9488_ESPD-3_5_v3.h
+ * 2. in Arduino/libraries/TFT_eSPI/User_Setup_Select.h 
+      a. comment: #include <User_Setup.h> 
+      b. add: 
+          - for version v2.3 and before:  #include <User_Setups/Setup300_ILI9488_ESPD-3_5_v2.h>  // Setup file for LaskaKit ESPD-3.5" 320x480, ILI9488 
+          - for version v3 and above:     #include <User_Setups/Setup303_ILI9488_ESPD-3_5_v3.h>  // Setup file for LaskaKit ESPD-3.5" 320x480, ILI9488 V3
+ * 
+ * Board constants:
+      TFT_BL          - LED back-light use: analogWrite(TFT_BL, TFT_BL_PWM);
+      POWER_OFF_PIN   - Pull LOW to switch board off
+      TOUCH_INT       - Touch interrupt pin
+    * I2C (µŠup and devices (only from v3)):
+      I2C_SDA         - Data pin 
+      I2C_SCL         - Clock pin
+    * SPI (µŠup (only from v3) and SD card):
+      SPI_MISO        - MISO pin
+      SPI_MOSI        - MOSI pin
+      SPI_SCK         - Clock pin
+      SPI_USUP_CS     - µŠup Chip Select pin (only from v3)
+      SPI_SD_CS       - SD Card Chip Select pin
+    * I2S (only from v3):
+      I2S_LRC         - Word select a.k.a. left-right clock pin
+      I2S_DOUT        - Serial data pin
+      I2S_BCLK        - Serial clock a.k.a. bit clock pin
+    * Battery mesurement:
+      BAT_PIN         - Battery voltage mesurement
+      deviderRatio    - Voltage devider ratio on ADC pin 1MOhm + 1.3MOhm
+ *
+ * Touch: 
+ * Chip used in board is FT5436, library: https://github.com/DustinWatts/FT6236
+ * Just changed CHIPID and VENDID
+ * Library is included in the project so it does not need to be downloaded
  *
  * Email:podpora@laskakit.cz
  * Web:laskakit.cz
 */
 
-#include <lvgl.h>
+#include <lvgl.h>       // working on v8.4.0. Not working on v9 and newer
 #include <TFT_eSPI.h>
 #include "FT6236.h"
 
-// Set your version of display (V2.0 uses FT6234 touch driver and V2.1 uses FT5436)
-#define V2_0
-//#define V2_1
-
-/* ADC */
 #define UPDATE_INTERVAL 1000   // 1 s
 #define MEAS_POINTS  30
-#define ADC 34  // Battery voltage mesurement
-#define deviderRatio 1.7693877551  // Voltage devider ratio on ADC pin 1MOhm + 1.3MOhm
-
-#define POWER_OFF_PIN 17
+#define TFT_BL_PWM 255 // Backlight brightness 0-255
 
 /*Change to your screen resolution*/
 static const uint16_t screenWidth = 480;
@@ -34,10 +56,6 @@ static const uint16_t screenHeight = 320;
 
 static lv_disp_draw_buf_t draw_buf;
 static lv_color_t buf[screenWidth * 10];
-
-// TFT SPI
-#define TFT_LED 33       // TFT backlight pin
-#define TFT_LED_PWM 250  // dutyCycle 0-255 last minimum was 10
 
 FT6236 ts = FT6236(screenWidth, screenHeight);
 TFT_eSPI tft = TFT_eSPI(screenWidth, screenHeight); /* TFT instance */
@@ -64,7 +82,8 @@ static void slider_event_led(lv_event_t *e)
   uint16_t light;
   lv_obj_t *slider = lv_event_get_target(e);
   light = map((int)lv_slider_get_value(slider), 0, 100, 10, 255);
-  ledcWrite(1, light);  // dutyCycle of backlight
+  analogWrite(TFT_BL, light);      // Set brightness of backlight
+
 }
 
 // Slider object
@@ -131,7 +150,7 @@ void ADCUpdate()
       values[k] = values[k + 1];
       lv_chart_set_next_value(chart, ser, values[k]);
     }
-    values[MEAS_POINTS] = analogReadMilliVolts(ADC) * deviderRatio;
+    values[MEAS_POINTS] = analogReadMilliVolts(BAT_PIN) * deviderRatio;
     lv_chart_set_next_value(chart, ser, values[MEAS_POINTS]);
   }
 }
@@ -217,23 +236,20 @@ void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data)
 void setup() 
 {
   Serial.begin(115200); /* prepare for possible serial debug */
+
   lv_init();
-	// configure backlight LED PWM functionalitites
-  ledcAttach(TFT_LED, 1000, 8);
-  ledcWrite(1, TFT_LED_PWM);
   tft.begin();                /* TFT init */
   tft.setRotation(3);         /* Landscape orientation, flipped */
 
-  if (!ts.begin(40))  // 40 in this case represents the sensitivity. Try higer or lower for better response.
-  {
-    Serial.println("Unable to start the capacitive touchscreen.");
-  }
-  #ifdef V2_0
-    ts.setRotation(1);
-  #endif
-  #ifdef V2_1
-    ts.setRotation(3);
-  #endif
+  analogWrite(TFT_BL, TFT_BL_PWM);      // Set brightness of backlight
+
+	Wire.begin(I2C_SDA, I2C_SCL);            // set dedicated I2C pins for ESPD-3.5 board
+
+	if (!ts.begin(40))	{ 		  // 40 in this case represents the sensitivity. Try higer or lower for better response.
+		Serial.println("Unable to start the capacitive touchscreen.");
+	}
+  //ts.setRotation(1);		//for older version v2 and before, uses FT6234 touch driver
+  ts.setRotation(1);		// FT5436 touch driver for v2.1 and above
 
   lv_disp_draw_buf_init(&draw_buf, buf, NULL, screenWidth * 10);
 
