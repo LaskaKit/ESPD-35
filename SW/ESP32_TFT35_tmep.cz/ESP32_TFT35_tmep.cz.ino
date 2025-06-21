@@ -1,20 +1,47 @@
 /* 
- * LaskaKit ESPDisplay for Weather Station. 
- * Thingspeak edition
- * Read Temperature, Humidity and pressure from Thingspeak and show on the display
+ * LaskaKit ESPDisplay for TMEP Weather Station. 
+ * Read Temperature, Humidity and pressure from TMEP and show on the display
  * For settings see config.h
  * 
+ * How to steps:
+ * 1. Copy file from https://github.com/LaskaKit/ESPD-35/tree/main/SW to Arduino/libraries/TFT_eSPI/User_Setups/
+ *    - for version v2.3 and before:  Setup300_ILI9488_ESPD-3_5_v2.h 
+ *    - for version v3 and above:     Setup303_ILI9488_ESPD-3_5_v3.h
+ * 2. in Arduino/libraries/TFT_eSPI/User_Setup_Select.h 
+      a. comment: #include <User_Setup.h> 
+      b. add: 
+          - for version v2.3 and before:  #include <User_Setups/Setup300_ILI9488_ESPD-3_5_v2.h>  // Setup file for LaskaKit ESPD-3.5" 320x480, ILI9488 
+          - for version v3 and above:     #include <User_Setups/Setup303_ILI9488_ESPD-3_5_v3.h>  // Setup file for LaskaKit ESPD-3.5" 320x480, ILI9488 V3
+ * 
+ * Board constants:
+      TFT_BL          - LED back-light use: analogWrite(TFT_BL, TFT_BL_PWM);
+      POWER_OFF_PIN   - Pull LOW to switch board off
+      TOUCH_INT       - Touch interrupt pin
+    * I2C (µŠup and devices (only from v3)):
+      I2C_SDA         - Data pin 
+      I2C_SCL         - Clock pin
+    * SPI (µŠup (only from v3) and SD card):
+      SPI_MISO        - MISO pin
+      SPI_MOSI        - MOSI pin
+      SPI_SCK         - Clock pin
+      SPI_USUP_CS     - µŠup Chip Select pin (only from v3)
+      SPI_SD_CS       - SD Card Chip Select pin
+    * I2S (only from v3):
+      I2S_LRC         - Word select a.k.a. left-right clock pin
+      I2S_DOUT        - Serial data pin
+      I2S_BCLK        - Serial clock a.k.a. bit clock pin
+    * Battery mesurement:
+      BAT_PIN         - Battery voltage mesurement
+      deviderRatio    - Voltage devider ratio on ADC pin 1MOhm + 1.3MOhm
+ *
  * Email:podpora@laskakit.cz
  * Web:laskakit.cz
- * 
- * Miles Burton DS18B20 library
- * https://github.com/milesburton/Arduino-Temperature-Control-Library
- */
+*/
 
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <Arduino.h>
-#include <TFT_eSPI.h>               // Hardware-specific library
+#include <TFT_eSPI.h>               // TFT Hardware-specific library
 #include <SPI.h>
 #include <Wire.h>
 #include <ArduinoJson.h>            // JSON library
@@ -26,35 +53,19 @@
 #include "config.h"                 // change to config.h and fill the file.
 #include "iot_iconset_16x16.h"      // WIFI and battery icons
 
-#define ADC 34                      // Battery voltage mesurement
-#define SDA 21
-#define SCL 22
-#define USE_STATIC_IP false         // if we want to use a static IP address
-#define deviderRatio 1.7693877551  // Voltage devider ratio on ADC pin 1MOhm + 1.3MOhm
-
-// if we want to use a static IP address
-#if USE_STATIC_IP
-  IPAddress ip(192,168,100,244);      // pick your own IP outside the DHCP range of your router
-  IPAddress gateway(192,168,100,1);   // watch out, these are comma's not dots
-  IPAddress subnet(255,255,255,0);
-#endif  
-
 
 #define TFT_DISPLAY_RESOLUTION_X 320
 #define TFT_DISPLAY_RESOLUTION_Y 480
-
-// TFT SPI
-#define TFT_LED   33                  // TFT backlight pin
+#define TFT_BL_PWM 255 // Backlight brightness 0-255
 
 // Define the colors, color picker here: https://ee-programming-notepad.blogspot.com/2016/10/16-bit-color-generator-picker.html
 #define TFT_TEXT_COLOR              0xFFFF  // white     0xFFFF
-#define TFT_BACKGROUND_COLOR        0x0000  // black     0x00A6  // dark blue 0x00A6
+#define TFT_BACKGROUND_COLOR        0x00A6  // dark blue 0x00A6   0x0000  // black
 #define TFT_TILE_SHADOW_COLOR       0x0000  // black     0x0000
 #define TFT_TILE_BACKGROUND_COLOR_1 0x0700  // green     0x0700
 #define TFT_TILE_BACKGROUND_COLOR_2 0x3314  // blue      0x3314
 #define TFT_TILE_BACKGROUND_COLOR_3 0xDEC0  // yellow    0xDEC0
 #define TFT_TILE_BACKGROUND_COLOR_4 0xD000  // red       0xD000
-#define TFT_LED_PWM                 100     // dutyCycle 0-255 last minimum was 15
 
 #define TFT_TIME_Y_OFFSET           50
 #define TFT_SQUARE_Y_OFFSET         150
@@ -108,6 +119,7 @@ int32_t wifiSignal;
 String date;
 uint32_t nextRefresh;
 uint32_t nextRefreshSHT40;
+bool SHT40 = true;
 
 const char* host = "tmep.cz";
 const int httpPort = 80;
@@ -226,7 +238,7 @@ uint8_t getWifiStrength() {
 }
 
 uint8_t getIntBattery() {
-  d_volt = analogReadMilliVolts(ADC) * deviderRatio / 1000;
+  d_volt = analogReadMilliVolts(BAT_PIN) * deviderRatio / 1000;
   Serial.println("Battery voltage: " + String(d_volt) + "V");
 
   // Měření napětí baterie | Battery voltage measurement
@@ -250,7 +262,7 @@ void printTime() {
   }
   display.setTextSize(1);
   display.setTextFont(7);
-  display.setTextColor(TFT_WHITE, TFT_BLACK);
+  display.setTextColor(TFT_WHITE, TFT_BACKGROUND_COLOR);
   display.setTextDatum(TC_DATUM);
   sprintf(buff, "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
   display.drawString(buff, (TFT_DISPLAY_RESOLUTION_X / 2), (TFT_TIME_Y_OFFSET));
@@ -335,9 +347,9 @@ void printValues() {
   }
   display.setTextColor(TFT_WHITE, 0xB50F);
   display.setTextPadding(display.textWidth("-99.99`C", 4));
-  if ((temp_in > 30) || (temp_in < -10))
+  if (!SHT40)
   {
-    display.drawString("- `C", TFT_TEXT_POS2_X, TFT_TEXT_POS2_Y, 4);
+    display.drawString("NO SENS", TFT_TEXT_POS2_X, TFT_TEXT_POS2_Y, 4);
   }
   else
   {
@@ -372,7 +384,7 @@ void WiFiConnection() {
   Serial.println();
   Serial.print("Connecting to...");
   Serial.println(ssid);
-  display.setTextColor(TFT_GREEN, TFT_BLACK);
+  display.setTextColor(TFT_GREEN, TFT_BACKGROUND_COLOR);
   display.print("Connecting to... ");
   display.println(ssid);
 
@@ -408,48 +420,49 @@ void WiFiConnection() {
 
 void getSHT40() {
 
-  sensors_event_t humidity, temp; // temperature and humidity variables
-  sht4.getEvent(&humidity, &temp);
+  if (! sht4.begin())  {
+    SHT40 = false;
+    Serial.println("SHT4x not found");
+    //while (1) delay(1);
+  } else {
+    SHT40 = true;
 
-  temp_in = temp.temperature;
-  hum_in= humidity.relative_humidity;
-  Serial.println("Temperature in: " + String(temp_in) + " degC");
-  Serial.println("Humidity in: " + String(hum_in) + " % rH");
+    sht4.setPrecision(SHT4X_HIGH_PRECISION); // highest resolution
+    sht4.setHeater(SHT4X_NO_HEATER); // no heater
+
+    sensors_event_t humidity, temp; // temperature and humidity variables
+    sht4.getEvent(&humidity, &temp);
+
+    temp_in = temp.temperature;
+    hum_in= humidity.relative_humidity;
+    Serial.println("Temperature in: " + String(temp_in) + " degC");
+    Serial.println("Humidity in: " + String(hum_in) + " % rH");
+  }
+
 }
 
 void setup() {
   Serial.begin(115200);
   while(!Serial) {} // Wait until serial is ok
-
-	// configure backlight LED PWM functionalitites
-  ledcAttach(TFT_LED, 1000, 8);
-  ledcWrite(1, TFT_LED_PWM);
+	Wire.begin(I2C_SDA, I2C_SCL);            // set dedicated I2C pins for ESPD-3.5 board
 
   // Time config
   configTzTime(time_zone, ntpServer1, ntpServer2);
 
   display.begin();
+  analogWrite(TFT_BL, TFT_BL_PWM);      // Set brightness of backlight
   display.setRotation(0);
-  display.fillScreen(TFT_BLACK);
+  display.fillScreen(TFT_BACKGROUND_COLOR);
   display.setSwapBytes(true);
-  display.fillScreen(TFT_BLACK);
+  display.fillScreen(TFT_BACKGROUND_COLOR);
   display.setTextSize(1);
   display.setTextFont(1);
-  display.setTextColor(TFT_YELLOW, TFT_BLACK);
+  display.setTextColor(TFT_YELLOW, TFT_BACKGROUND_COLOR);
   display.setTextDatum(MC_DATUM);  
   display.drawString(BOOT_MESSAGE, display.width() / 2, display.height() / 2);
   // pripojeni k WiFi
   WiFiConnection();
-  display.fillScreen(TFT_BLACK);
-
-  if (! sht4.begin())  {
-    Serial.println("SHT4x not found");
-    Serial.println("Check the connection");
-    //while (1) delay(1);
-  }
- 
-  sht4.setPrecision(SHT4X_HIGH_PRECISION); // highest resolution
-  sht4.setHeater(SHT4X_NO_HEATER); // no heater
+  display.fillScreen(TFT_BACKGROUND_COLOR);
 
   display.pushImage(TFT_SQUARE_POS1_X, TFT_SQUARE_POS1_Y, TFT_SQUARE_SIZE, TFT_SQUARE_SIZE, temp_out_pic);
   display.pushImage(TFT_SQUARE_POS2_X, TFT_SQUARE_POS2_Y, TFT_SQUARE_SIZE, TFT_SQUARE_SIZE, temp_pic);

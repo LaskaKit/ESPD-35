@@ -1,31 +1,48 @@
-/*
+/* 
 * ESPD-3.5" - using of telegram bot and clock with ESPD-35
-* Written by chiptron.cz for laskakit.cz (2023)
+* Written by chiptron.cz for laskakit.cz (2023, updated 2025)
 * ESPD35: https://www.laskakit.cz/laskakit-espd-35-esp32-3-5-tft-ili9488-touch/
 * TMEP.cz
-
-* Used library:
-* AsyncTelegram - https://github.com/cotestatnt/AsyncTelegram
-* Font convertor: https://oleddisplay.squix.ch/
-* ArduinoJson: https://arduinojson.org/
-* TFT_eSPI - https://github.com/Bodmer/TFT_eSPI
-* Settings of TFT_eSPI:
-* in User_Setup.h (TFT_eSPI) set ESP32 Dev board pinout to 
-* // Define driver
-* #define ILI9488_DRIVER
-* // The hardware SPI can be mapped to any pins
-* #define TFT_MISO 12
-* #define TFT_MOSI 13
-* #define TFT_SCLK 14
-* #define TFT_CS   15  // Chip select control pin
-* #define TFT_DC   32  // Data Command control pin
-* #define TFT_RST  -1
-* #define TFT_BL   33  // LED back-light
-* // Backlight
-* #define TFT_BL   33          
-* #define TFT_BACKLIGHT_ON HIGH
-* // SPI freq
-* #define SPI_FREQUENCY  20000000
+ * 
+ * How to steps:
+ * 1. Copy file from https://github.com/LaskaKit/ESPD-35/tree/main/SW to Arduino/libraries/TFT_eSPI/User_Setups/
+ *    - for version v2.3 and before:  Setup300_ILI9488_ESPD-3_5_v2.h 
+ *    - for version v3 and above:     Setup303_ILI9488_ESPD-3_5_v3.h
+ * 2. in Arduino/libraries/TFT_eSPI/User_Setup_Select.h 
+      a. comment: #include <User_Setup.h> 
+      b. add: 
+          - for version v2.3 and before:  #include <User_Setups/Setup300_ILI9488_ESPD-3_5_v2.h>  // Setup file for LaskaKit ESPD-3.5" 320x480, ILI9488 
+          - for version v3 and above:     #include <User_Setups/Setup303_ILI9488_ESPD-3_5_v3.h>  // Setup file for LaskaKit ESPD-3.5" 320x480, ILI9488 V3
+ * 
+ * Board constants:
+      TFT_BL          - LED back-light use: analogWrite(TFT_BL, TFT_BL_PWM);
+      POWER_OFF_PIN   - Pull LOW to switch board off
+      TOUCH_INT       - Touch interrupt pin
+    * I2C (µŠup and devices (only from v3)):
+      I2C_SDA         - Data pin 
+      I2C_SCL         - Clock pin
+    * SPI (µŠup (only from v3) and SD card):
+      SPI_MISO        - MISO pin
+      SPI_MOSI        - MOSI pin
+      SPI_SCK         - Clock pin
+      SPI_USUP_CS     - µŠup Chip Select pin (only from v3)
+      SPI_SD_CS       - SD Card Chip Select pin
+    * I2S (only from v3):
+      I2S_LRC         - Word select a.k.a. left-right clock pin
+      I2S_DOUT        - Serial data pin
+      I2S_BCLK        - Serial clock a.k.a. bit clock pin
+    * Battery mesurement:
+      BAT_PIN         - Battery voltage mesurement
+      deviderRatio    - Voltage devider ratio on ADC pin 1MOhm + 1.3MOhm
+ *
+ * Used library:
+ * AsyncTelegram - https://github.com/cotestatnt/AsyncTelegram
+ * Font convertor: https://oleddisplay.squix.ch/
+ * ArduinoJson: https://arduinojson.org/
+ * TFT_eSPI - https://github.com/Bodmer/TFT_eSPI
+ *
+ * Email:podpora@laskakit.cz
+ * Web:laskakit.cz
 */
 
 #include <WiFi.h>
@@ -54,9 +71,7 @@
 // CHMU Alerts from TMEP.cz 
 #include <ArduinoJson.h>
 
-// TFT SPI
-#define TFT_LED 33			// TFT backlight pin
-#define TFT_LED_PWM 100 	// dutyCycle 0-255 last minimum was 15
+#define TFT_BL_PWM 255 // Backlight brightness 0-255
 
 // Wi-Fi credentials
 const char *ssid     = "xxx";
@@ -215,12 +230,10 @@ void updtDisplay()
 
 void displayInit()
 {
-	// configure backlight LED PWM functionalitites
-  ledcAttach(TFT_LED, 1000, 8);
-  ledcWrite(1, TFT_LED_PWM);
-  
   tft.init();
   tft.setRotation(1);
+  analogWrite(TFT_BL, TFT_BL_PWM);      // Set brightness of backlight
+
 }
 
 void telegramBotInit()
