@@ -25,25 +25,10 @@
 #include "config.h"             // change to config.h and fill the file.
 #include "iot_iconset_16x16.h"  // WIFI and battery icons
 
-#define ADC 34  // Battery voltage mesurement
-#define SDA 21
-#define SCL 22
-#define USE_STATIC_IP false        // if we want to use a static IP address
-#define deviderRatio 1.7693877551  // Voltage devider ratio on ADC pin 1MOhm + 1.3MOhm
-
-// if we want to use a static IP address
-#if USE_STATIC_IP
-IPAddress ip(192, 168, 100, 244);     // pick your own IP outside the DHCP range of your router
-IPAddress gateway(192, 168, 100, 1);  // watch out, these are comma's not dots
-IPAddress subnet(255, 255, 255, 0);
-#endif
-
-
 #define TFT_DISPLAY_RESOLUTION_X 320
 #define TFT_DISPLAY_RESOLUTION_Y 480
 
-// TFT SPI
-#define TFT_LED 33  // TFT backlight pin
+#define TFT_BL_PWM 255 // Backlight brightness 0-255
 
 // Define the colors, color picker here: https://ee-programming-notepad.blogspot.com/2016/10/16-bit-color-generator-picker.html
 #define TFT_TEXT_COLOR 0xFFFF               // white     0xFFFF
@@ -224,7 +209,7 @@ uint8_t getWifiStrength() {
 }
 
 uint8_t getIntBattery() {
-  d_volt = analogReadMilliVolts(ADC) * deviderRatio / 1000;
+  d_volt = analogReadMilliVolts(BAT_PIN) * deviderRatio / 1000;
   Serial.println("Battery voltage: " + String(d_volt) + "V");
 
   // Měření napětí baterie | Battery voltage measurement
@@ -385,11 +370,10 @@ void wifiManagerSetup()
 void setup() {
   Serial.begin(115200);
   while (!Serial) {}  // Wait until serial is ok
-	// configure backlight LED PWM functionalitites
-  ledcAttach(TFT_LED, 1000, 8);
-  ledcWrite(1, TFT_LED_PWM);
   
   display.begin();
+  analogWrite(TFT_BL, TFT_BL_PWM);      // Set brightness of backlight
+
   display.setRotation(0);
   display.fillScreen(TFT_BLACK);
   display.setSwapBytes(true);
