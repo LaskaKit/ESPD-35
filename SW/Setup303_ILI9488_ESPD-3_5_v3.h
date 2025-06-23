@@ -17,7 +17,7 @@
 #define TFT_RST     -1          // RST is connectred to EN pin ESP32
 
 // Other pins and constants:
-#define POWER_OFF_PIN   17      // Pull LOW to switch board off
+#define POWER_OFF_PIN   16      // Pull LOW to switch board off
 #define TOUCH_INT       10      // Touch interrupt pin
 // I2C (µŠup and devices):
 #define I2C_SDA         42      // Data pin 
