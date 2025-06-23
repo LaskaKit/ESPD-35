@@ -65,6 +65,7 @@
 
 FT6236 ts = FT6236(480, 320);	// Create object for Touch library
 TFT_eSPI tft = TFT_eSPI();  	// Invoke custom library with default width and height
+SPIClass sdSPI(VSPI);
 
 uint32_t runTime = 0;			// Variable for measuring Screen test time
 
@@ -609,7 +610,9 @@ int SDtestInit(int32_t x, int32_t y)
 {
 	uint8_t cardType;
 	uint64_t cardSize;
-	if (!SD.begin(SPI_SD_CS))
+	sdSPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, SPI_SD_CS);
+	
+	if (!SD.begin(SPI_SD_CS, sdSPI))
 	{
 		return -1;
 	}

@@ -51,6 +51,7 @@
 #define SDTEST_TEXT_PADDING 30
 
 TFT_eSPI tft = TFT_eSPI(); // Invoke custom library with default width and height
+SPIClass sdSPI(FSPI);
 
 void displayInit()
 {
@@ -149,7 +150,9 @@ int SDtestInit(int32_t x, int32_t y)
 {
 	uint8_t cardType;
 	uint64_t cardSize;
-	if (!SD.begin(SPI_SD_CS))
+	sdSPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, SPI_SD_CS);
+
+	if (!SD.begin(SPI_SD_CS, sdSPI))
 	{
 		return -1;
 	}
