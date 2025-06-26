@@ -388,12 +388,6 @@ void WiFiConnection() {
   display.print("Connecting to... ");
   display.println(ssid);
 
-  #if USE_STATIC_IP
-    if (!WiFi.config(ip, gateway, subnet)) {
-      Serial.println("STA Failed to configure");
-      display.println("STA Failed to configure");
-    }
-  #endif
   WiFi.begin(ssid, pass);
 
   int i = 0;

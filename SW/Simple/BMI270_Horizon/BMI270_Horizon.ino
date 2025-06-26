@@ -1,5 +1,5 @@
 /* 
- * This example code is used for LaskaKit ESPD-3.5 ESP32 3.5 TFT ILI9488 Touch v3.0 https://www.laskakit.cz/laskakit-esp32-s3-devkit/
+ * This example code is used for LaskaKit ESPD-3.5 ESP32 3.5 TFT ILI9488 Touch v3.0 https://www.laskakit.cz/laskakit-espd-35-esp32-3-5-tft-ili9488-touch/
  * with Inertial Measurement Unit BMI270 on board
  * ESPD-3.5 board reads the gyroscope values from the BMI270 sensor and continuously draw horizon on display
  * 

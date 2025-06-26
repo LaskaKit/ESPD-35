@@ -1,5 +1,5 @@
 /* 
- * LVGL example for LaskaKit ESPD-3.5" 320x480, ILI9488 
+ * LVGL example for LaskaKit ESPD-3.5" 320x480, ILI9488 https://www.laskakit.cz/laskakit-espd-35-esp32-3-5-tft-ili9488-touch/
  * example from TFT_eSPI library is used
  * 
  * How to steps:

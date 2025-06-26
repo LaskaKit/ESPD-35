@@ -1,5 +1,5 @@
 /* 
- * Touch test for LaskaKit ESPD-3.5" 320x480, ILI9488 
+ * Touch test for LaskaKit ESPD-3.5" 320x480, ILI9488 https://www.laskakit.cz/laskakit-espd-35-esp32-3-5-tft-ili9488-touch/
  * example from TFT_eSPI library is used
  * 
  * How to steps:
@@ -66,7 +66,7 @@ void setup(void) {
 	if (!ts.begin(40))	{ 		  // 40 in this case represents the sensitivity. Try higer or lower for better response.
 		Serial.println("Unable to start the capacitive touchscreen.");
 	}
-  //ts.setRotation(1);		//for older version v2 and before, uses FT6234 touch driver
+  //ts.setRotation(1);		//for older version v2 and before, uses FT6234 touch driver 
   ts.setRotation(3);		// FT5436 touch driver for v2.1 and above
 
   analogWrite(TFT_BL, TFT_BL_PWM);      // Set brightness of backlight

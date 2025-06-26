@@ -1,5 +1,5 @@
 /* 
-* This example code is used for LaskaKit ESPD-3.5 ESP32 3.5 TFT ILI9488 Touch v3.0 https://www.laskakit.cz/laskakit-esp32-s3-devkit/
+* This example code is used for LaskaKit ESPD-3.5 ESP32 3.5 TFT ILI9488 Touch v3.0 https://www.laskakit.cz/laskakit-espd-35-esp32-3-5-tft-ili9488-touch/
 * with Temperature and Humidity SHT40 sensor on board
 * ESPD-3.5 board reads temperature and humidity from SHT40 sensor 
 * and print on display
