@@ -51,6 +51,7 @@
 #include "Audio.h"
 #include <SparkFun_BMI270_Arduino_Library.h>
 #include "FT6236.h"
+#include "Adafruit_SHT4x.h"
 
 // TFT SPI
 #define TFT_BL_PWM 255 // Backlight brightness 0-255
@@ -72,6 +73,7 @@
 // BMI270 I2C ADDRESS
 #define BMI270_I2C_ADDRESS 0x68
 
+Adafruit_SHT4x sht4 = Adafruit_SHT4x();
 Audio audio;
 BMI270 bmi270;
 FT6236 ts = FT6236(480, 320);	// Create object for Touch library
@@ -486,6 +488,21 @@ void printVoltage()
 	tft.drawString(String(analogReadMilliVolts(BAT_PIN) * deviderRatio / 1000) + " V", TFT_RES_X - 3, 0);
 }
 
+void printSHT4()
+{
+  tft.setTextSize(1);
+  tft.setTextFont(2);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+	tft.setTextDatum(TR_DATUM);
+  // tft.setTextPadding(tft.textWidth("9.99 V", 2));
+
+  sensors_event_t humidity, temp;
+  sht4.getEvent(&humidity, &temp);
+
+  String humTemp = String(temp.temperature) + " ˚C " + String(humidity.relative_humidity) + "% rH";
+  tft.drawString(humTemp, TFT_RES_X - 40, 0);
+}
+
 // Print initial screen
 void touchScreen()
 {
@@ -529,6 +546,7 @@ void touchScreen()
 	tft.drawString("X: ", 3, 0);
 	tft.drawString("Y: ", 3, 16);
 	printVoltage();
+  printSHT4();
 }
 
 // SD test functions
@@ -847,9 +865,14 @@ void setup()
   }
 
   SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
-
   audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
 
+  if (!sht4.begin()) {
+    Serial.println("Unable to find SHT4x.");
+  }
+
+  sht4.setPrecision(SHT4X_HIGH_PRECISION);
+  sht4.setHeater(SHT4X_NO_HEATER);
 
   //ts.setRotation(1);		//for older version v2 and before, uses FT6234 touch driver
   ts.setRotation(3);		// FT5436 touch driver for v2.1 and above
