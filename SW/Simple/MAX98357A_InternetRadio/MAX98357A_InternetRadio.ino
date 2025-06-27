@@ -42,8 +42,8 @@
 #include "FS.h"
 
 // Replace with your network credentials
-const char* ssid = "laskalab";
-const char* password = "laskaLAB754125";
+const char* ssid = "xxxxx";
+const char* password = "xxxxx";
 
 // TFT SPI
 #define TFT_BL_PWM 255 // Backlight brightness 0-255
