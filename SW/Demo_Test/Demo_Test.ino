@@ -44,16 +44,22 @@
 */
 
 #include <TFT_eSPI.h> // Hardware-specific library
-#include <FS.h>
-#include <SD.h>
+#include "FS.h"
+#include "SD.h"
 #include <SPI.h>
 #include <Arduino.h>
+#include "Audio.h"
+#include <SparkFun_BMI270_Arduino_Library.h>
 #include "FT6236.h"
 
 // TFT SPI
 #define TFT_BL_PWM 255 // Backlight brightness 0-255
 #define TFT_RES_X 480
 #define TFT_RES_Y 320
+#define SCREEN_WIDTH TFT_RES_X
+#define SCREEN_HEIGHT TFT_RES_Y
+#define CENTER_X (SCREEN_WIDTH / 2)
+#define CENTER_Y (SCREEN_HEIGHT / 2)
 #define CENTRE_X TFT_RES_X / 2
 #define TFT_GREY 0x7BEF
 #define RECT_SIZE_X 100
@@ -63,6 +69,11 @@
 // Delay between demo pages
 #define WAIT 1000
 
+// BMI270 I2C ADDRESS
+#define BMI270_I2C_ADDRESS 0x68
+
+Audio audio;
+BMI270 bmi270;
 FT6236 ts = FT6236(480, 320);	// Create object for Touch library
 TFT_eSPI tft = TFT_eSPI();  	// Invoke custom library with default width and height
 SPIClass sdSPI(VSPI);
@@ -493,13 +504,11 @@ void touchScreen()
 	tft.drawString("I2C", (RECT_SIZE_X / 2) + RECT_SIZE_X + 27, TFT_RES_Y - (RECT_SIZE_Y / 2));
 	tft.setTextDatum(TC_DATUM);
 	tft.drawString("scanner", (RECT_SIZE_X / 2) + RECT_SIZE_X + 27, TFT_RES_Y - (RECT_SIZE_Y / 2));
-	// Print Power off button
+	// Print Music button
 	tft.setTextColor(TFT_WHITE, TFT_RED);
 	tft.fillRoundRect(2 * RECT_SIZE_X + 54, TFT_RES_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_RED);
-	tft.setTextDatum(BC_DATUM);
-	tft.drawString("Power", (RECT_SIZE_X / 2) + 2 * RECT_SIZE_X + 54, TFT_RES_Y - (RECT_SIZE_Y / 2));
-	tft.setTextDatum(TC_DATUM);
-	tft.drawString("off", (RECT_SIZE_X / 2) + 2 * RECT_SIZE_X + 54, TFT_RES_Y - (RECT_SIZE_Y / 2));
+	tft.setTextDatum(MC_DATUM);
+	tft.drawString("Music", (RECT_SIZE_X / 2) + 2 * RECT_SIZE_X + 54, TFT_RES_Y - (RECT_SIZE_Y / 2));
 	// Print Screen test button
 	tft.setTextColor(TFT_WHITE, TFT_BLUE);
 	tft.fillRoundRect(TFT_RES_X - RECT_SIZE_X, TFT_RES_Y - RECT_SIZE_Y, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_BLUE);
@@ -507,6 +516,11 @@ void touchScreen()
 	tft.drawString("Screen", TFT_RES_X - (RECT_SIZE_X / 2), TFT_RES_Y - (RECT_SIZE_Y / 2));
 	tft.setTextDatum(TC_DATUM);
 	tft.drawString("test", TFT_RES_X - (RECT_SIZE_X / 2), TFT_RES_Y - (RECT_SIZE_Y / 2));
+  // Print Gyro button
+  tft.setTextColor(TFT_WHITE, TFT_YELLOW);
+  tft.fillRoundRect(TFT_RES_X - RECT_SIZE_X, TFT_RES_Y - 2* RECT_SIZE_Y - 27, RECT_SIZE_X, RECT_SIZE_Y, 3, TFT_YELLOW);
+  tft.setTextDatum(MC_DATUM);
+	tft.drawString("Gyro", TFT_RES_X - RECT_SIZE_X / 2, TFT_RES_Y - 2* RECT_SIZE_Y - 27 + RECT_SIZE_Y / 2);
 
 	tft.setTextSize(1);
 	tft.setTextFont(2);
@@ -734,6 +748,87 @@ void I2CTest()
 	while (!ts.touched());
 }
 
+void MusicTest()
+{
+  tft.fillScreen(TFT_BLACK);
+  tft.drawString("Touch to return to the main page", TFT_RES_X / 2, TEST_TEXT_PADDING + 2 * TEST_TEXT_PADDING);
+
+  SD.begin(SPI_SD_CS);
+
+  audio.setVolume(15);  // 0..21
+  audio.connecttoFS(SD, "/Pink-Panther.wav");
+
+  while (true) {
+    audio.loop();
+    vTaskDelay(1);
+
+    if (ts.touched()) {
+      break;
+      SD.end();
+    }
+  }
+}
+
+void drawHorizon(float pitch, float roll) {
+  float pitchOffsetDraw = pitch * (SCREEN_HEIGHT / 90.0);
+  float cosR = cos(roll * PI / 180.0);
+  float sinR = sin(roll * PI / 180.0);
+
+  for (int x = -CENTER_X; x <= CENTER_X; x += 2) {
+    float y = pitchOffsetDraw + (x * sinR / cosR);
+    if (y < CENTER_Y) {
+      tft.drawLine(CENTER_X + x, 0, CENTER_X + x, CENTER_Y + y, TFT_BLUE);
+      tft.drawLine(CENTER_X + x, CENTER_Y + y, CENTER_X + x, SCREEN_HEIGHT, TFT_ORANGE);
+    } else {
+      tft.drawLine(CENTER_X + x, 0, CENTER_X + x, CENTER_Y + y, TFT_BLUE);
+      tft.drawLine(CENTER_X + x, CENTER_Y + y, CENTER_X + x, SCREEN_HEIGHT, TFT_ORANGE);
+    }
+  }
+  tft.drawRect(CENTER_X-30, CENTER_Y-3, 60, 6, TFT_WHITE);
+}
+
+void GyroTest()
+{
+  delay(100);
+  tft.fillScreen(TFT_BLACK);
+  // tft.drawString("Touch to return to the main page", TFT_RES_X / 2, TEST_TEXT_PADDING + 2 * TEST_TEXT_PADDING);
+
+  // Calibration offsets
+  float rollOffset = 0.0;
+  float pitchOffset = 0.0;
+
+  // Perform initial calibration
+  // note the axes remapping
+  bmi270.getSensorData();
+  float az = bmi270.data.accelX;
+  float ay = bmi270.data.accelY;
+  float ax = -bmi270.data.accelZ;
+  rollOffset = atan2(ay, az) * 180.0 / PI;
+  pitchOffset = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI;
+  Serial.println("Calibration Done.");
+
+  while (true) {
+    if (ts.touched()) {
+      return;
+    }
+
+    bmi270.getSensorData();
+    // note the axes remapping
+    float az = bmi270.data.accelX;
+    float ay = bmi270.data.accelY;
+    float ax = -bmi270.data.accelZ;
+    // Serial.printf("X: %f Y: %f Z: %f ", ax, ay, az);
+
+    float roll = atan2(ay, az) * 180.0 / PI - rollOffset;
+    float pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180.0 / PI - pitchOffset;
+    // Serial.printf("Pitch: %f Roll: %f\n", pitch, roll);
+    // int start = millis();
+    drawHorizon(pitch, roll);
+    // Serial.println((millis() - start));
+    delay(10);
+  }
+}
+
 void setup()
 {
 	// configure backlight LED PWM functionalitites
@@ -747,6 +842,15 @@ void setup()
 	if (!ts.begin(40))	{ 		  // 40 in this case represents the sensitivity. Try higer or lower for better response.
 		Serial.println("Unable to start the capacitive touchscreen.");
 	}
+  if (!bmi270.beginI2C(BMI270_I2C_ADDRESS) != BMI2_OK) {
+    Serial.println("Unable to start BMI270 gyro.");
+  }
+
+  SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
+
+  audio.setPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
+
+
   //ts.setRotation(1);		//for older version v2 and before, uses FT6234 touch driver
   ts.setRotation(3);		// FT5436 touch driver for v2.1 and above
 
@@ -782,11 +886,18 @@ void loop()
 			I2CTest();
 			touchScreen();
 		}
-		// If Power off touched
+		// If Music touched
 		else if ((p.x > (2 * RECT_SIZE_X + 54)) && (p.x < (3 * RECT_SIZE_X + 54)) && (p.y > (TFT_RES_Y - RECT_SIZE_Y)) && (p.y < TFT_RES_Y))
 		{
-			pinMode(POWER_OFF_PIN, OUTPUT);
-			digitalWrite(POWER_OFF_PIN, LOW);
+      MusicTest();
+      touchScreen();
+			// pinMode(POWER_OFF_PIN, OUTPUT);
+			// digitalWrite(POWER_OFF_PIN, LOW);
 		}
+    else if ((p.x > (TFT_RES_X - RECT_SIZE_X)) && (p.x < TFT_RES_X) && (p.y > (TFT_RES_Y - RECT_SIZE_Y * 2 - 27)) && (p.y < TFT_RES_Y - RECT_SIZE_Y - 27))
+    {
+      GyroTest();
+      touchScreen();
+    }
 	}
 }
