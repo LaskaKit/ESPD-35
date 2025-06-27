@@ -37,7 +37,7 @@
 #include <TFT_eSPI.h>               // Hardware-specific library
 #include <SPI.h>
 #include "WiFi.h"
-#include "Audio.h"
+#include "Audio.h"                  // https://github.com/schreibfaul1/ESP32-audioI2S
 #include "SD.h"
 #include "FS.h"
 
