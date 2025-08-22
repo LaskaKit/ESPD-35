@@ -1,4 +1,6 @@
-### Version 3.0
+### Version 3.1
+- Power button replaced with switch
+#### Version 3.0
 - New µc ESP32-S3-N16R8
 - IPS Display
 - New side GPIO connector
