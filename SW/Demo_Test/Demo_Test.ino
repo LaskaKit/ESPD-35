@@ -12,6 +12,12 @@
           - for version v2.3 and before:  #include <User_Setups/Setup300_ILI9488_ESPD-3_5_v2.h>  // Setup file for LaskaKit ESPD-3.5" 320x480, ILI9488 
           - for version v3 and above:     #include <User_Setups/Setup303_ILI9488_ESPD-3_5_v3.h>  // Setup file for LaskaKit ESPD-3.5" 320x480, ILI9488 V3
  * 
+ * Arduino Settings:
+		* Board: ESP32S3 Dev Module
+		* Flash: 16MB
+		* Partition Scheme: Huge APP 3MB
+		* PSRAM: OPI PSRAM
+ *
  * Board constants:
       TFT_BL          - LED back-light use: analogWrite(TFT_BL, TFT_BL_PWM);
       POWER_OFF_PIN   - Pull LOW to switch board off
