@@ -648,9 +648,8 @@ int SDtestInit(int32_t x, int32_t y)
 {
 	uint8_t cardType;
 	uint64_t cardSize;
-	sdSPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, SPI_SD_CS);
 	
-	if (!SD.begin(SPI_SD_CS, sdSPI))
+	if (!SD.begin(SPI_SD_CS))
 	{
 		return -1;
 	}
@@ -686,6 +685,7 @@ void SDtest()
 	tft.setTextFont(4);
 	tft.setTextColor(TFT_WHITE, TFT_BLACK);
 	tft.setTextDatum(BC_DATUM);
+
 	if (SDtestInit(TFT_RES_X / 2, TEST_TEXT_PADDING))
 	{
 		tft.drawString("SD card not found", TFT_RES_X / 2, TEST_TEXT_PADDING);
@@ -693,6 +693,7 @@ void SDtest()
 		SD.end();
 		return;
 	}
+
 	tft.drawString("SD card mounted", TFT_RES_X / 2, TEST_TEXT_PADDING * 2);
 	File file = SD.open("/test.txt", FILE_APPEND);
 	if (!file)
