@@ -4,7 +4,7 @@
  * ESPD-3.5 board reads the camera values from the MLX90641 sensor and continuously draw it on display
  * 
  * Board:   LaskaKit ESPD-3.5 ESP32 3.5 TFT ILI9488 Touch   https://www.laskakit.cz/laskakit-espd-35-esp32-3-5-tft-ili9488-touch/
- * Sensor:  LaskaKit MLX90641 Thermocamera 16x12            tbd
+ * Sensor:  LaskaKit MLX90641 Thermocamera 16x12            https://www.laskakit.cz/laskakit-mlx90641-modul-termokamery-16--12px-55--x35/
  *
  * How to steps:
  * 1. Copy file Setup303_ILI9488_ESPD-3_5_v3.h from https://github.com/LaskaKit/ESPD-35/tree/main/SW to Arduino/libraries/TFT_eSPI/User_Setups/  
