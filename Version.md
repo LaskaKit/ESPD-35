@@ -1,4 +1,8 @@
-### Version 3.1
+### Version 3.2
+- uSup connectors moved outside by 100 mil
+- Switch moved far from connectors
+- SHT40 moved.
+#### Version 3.1
 - Power button replaced with switch
 #### Version 3.0
 - New µc ESP32-S3-N16R8
