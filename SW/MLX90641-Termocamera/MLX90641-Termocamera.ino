@@ -302,7 +302,7 @@ void setup() {
   while (!Serial && (millis()-t0 < 2000)) { delay(10); }
 
   tft.init();
-  tft.setRotation(1);                 // ILI9488 landscape 480x320
+  tft.setRotation(3);                 // ILI9488 landscape 480x320
   tft.fillScreen(TFT_BLACK);
 
   // --- Battery ADC setup ---
