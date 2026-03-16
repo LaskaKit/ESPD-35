@@ -3,9 +3,54 @@
   Audio:   schreibfaul1/ESP32-audioI2S
   Displej: TFT_eSPI (User_Setup pro ESPD-3.5)
   Touch:   FT6236/FT5436 (lokálně v projektu)
-
-  Změna: VU meter je jeden analogový sloupec z audio.getVUlevel()
 */
+/* 
+ * This example code is used for LaskaKit ESPD-3.5 ESP32 3.5 TFT ILI9488 Touch v3.0 https://www.laskakit.cz/laskakit-espd-35-esp32-3-5-tft-ili9488-touch/
+ * LaskaKit ESPD-3.5" Internet Radio (ESP32-S3 + ILI9488 + FT5436)
+ * 
+ * Board:   LaskaKit ESPD-3.5 ESP32 3.5 TFT ILI9488 Touch   https://www.laskakit.cz/laskakit-espd-35-esp32-3-5-tft-ili9488-touch/
+ * Speaker: 3W 4Ω 40mm                                      https://www.laskakit.cz/reproduktor-3w-4-40mm/
+ *
+ * How to steps:
+ * 1. Copy file Setup303_ILI9488_ESPD-3_5_v3.h from https://github.com/LaskaKit/ESPD-35/tree/main/SW to Arduino/libraries/TFT_eSPI/User_Setups/  
+ * 2. in Arduino/libraries/TFT_eSPI/User_Setup_Select.h 
+      a. comment: #include <User_Setup.h>
+      b. add: #include <User_Setups/Setup303_ILI9488_ESPD-3_5_v3.h>  // Setup file for LaskaKit ESPD-3.5" 320x480, ILI9488 V3
+ * 
+ * Board constants:
+      TFT_BL          - LED back-light use: analogWrite(TFT_BL, TFT_BL_PWM);
+      TOUCH_INT       - Touch interrupt pin
+    * I2C (µŠup and devices (only from v3)):
+      I2C_SDA         - Data pin 
+      I2C_SCL         - Clock pin
+    * SPI (µŠup (only from v3) and SD card):
+      SPI_MISO        - MISO pin
+      SPI_MOSI        - MOSI pin
+      SPI_SCK         - Clock pin
+      SPI_USUP_CS     - µŠup Chip Select pin (only from v3)
+      SPI_SD_CS       - SD Card Chip Select pin
+    * I2S (only from v3):
+      I2S_LRC         - Word select a.k.a. left-right clock pin
+      I2S_DOUT        - Serial data pin
+      I2S_BCLK        - Serial clock a.k.a. bit clock pin
+    * Battery mesurement:
+      BAT_PIN         - Battery voltage mesurement
+      deviderRatio    - Voltage devider ratio on ADC pin 1MOhm + 1.3MOhm
+ *
+ * Boasrd settings:
+ *          * ESP32S3 Dev Module
+ *          * Flash Size: 16MB
+ *          * Partition Scheme: "Huge APP"
+ *          * PSRAM: OPI PSRAM
+ *
+ * Libraries (tested):
+ *          1. esp32 core: v3.3.7
+ *          2. https://github.com/schreibfaul1/ESP32-audioI2S v 3.4.4.
+ * 
+ * Email:podpora@laskakit.cz
+ * Web:laskakit.cz
+*/
+
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -96,14 +141,6 @@ uint8_t backlightIdx = 2;
 FT6236   ts(480, 320);
 TFT_eSPI tft;
 Audio    audio;
-
-// Baterie (fallback)
-#ifndef BAT_PIN
-#define BAT_PIN A0
-#endif
-#ifndef deviderRatio
-#define deviderRatio 1.769
-#endif
 
 // ====== Stanice ======
 struct Station { const char* name; const char* url; };
