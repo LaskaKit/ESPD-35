@@ -99,8 +99,6 @@ Piny jsou v `Config.h` a jsou **předvyplněné pro ESPD‑3.5 Rev 3.2**:
 // Dotyk FT5436 (I2C)
 #define I2C_SDA   42
 #define I2C_SCL    2
-// Ovladaci tlacitko
-#define BUTTON_PIN 0     // BOOT
 ```
 
 > Máš‑li jinou revizi desky, zkontroluj piny podle pinoutu a ukázek v `SW/` repozitáře LaskaKit.
