@@ -4,7 +4,7 @@ Radar letadel (**adsb.fi**) a srážkový **meteoradar ČHMÚ** s animací na de
 
 Dvě obrazovky na jednom zařízení — letecký provoz nad tebou a přicházející srážky včetně jejich pohybu. Bez pájení, stačí deska, USB kabel a WiFi.
 
-> Připraveno pro **[laskakit.cz](https://www.laskakit.cz)**. Projekt vychází z [petus/Meteo‑PlaneRadar](https://github.com/petus/Meteo-PlaneRadar) (původně pro **chiptron.cz**), portováno a rozšířeno pro obdélníkový displej ESPD‑3.5.
+> Připraveno pro **[laskakit.cz](https://www.laskakit.cz)**. Projekt vychází z [petus/MeteoPlaneRadar](https://github.com/petus/MeteoPlaneRadar) (původně pro **chiptron.cz**), portováno a rozšířeno pro obdélníkový displej ESPD‑3.5.
 
 ---
 
@@ -48,7 +48,7 @@ Obě obrazovky používají **správnou geografickou projekci** — meteoradar W
 | **Krabička** | [Krabička pro ESPD‑3.5"](https://www.laskakit.cz/laskakit--krabicka-pro-espd-35/?variantId=12574) |
 | **Repozitář desky** | [github.com/LaskaKit/ESPD‑35](https://github.com/LaskaKit/ESPD-35) |
 
-Stačí deska a USB‑C kabel. Polohu není třeba zadávat — zjistí se automaticky podle IP.
+Stačí deska a USB‑C kabel. Polohu není třeba zadávat — zjistí se automaticky podle IP. Pokud nesedí, je možné jí upravit ručně ve WiFi amanageru - klikni na tlačítko WiFi + Poloha (AP) a deska si vytvoří vlastní WiFi Access Point, ke kterému se připojíš a pozici upravíš.
 
 ---
 
@@ -156,7 +156,7 @@ Meteoradar: 6 ramcu
 
 ---
 
-## Zdroje dat — při použití uveďte
+## Zdroje dat
 
 | Data | Zdroj | Poznámka |
 | --- | --- | --- |
@@ -172,6 +172,6 @@ Meteoradar: 6 ramcu
 
 Kód je pod licencí **MIT** — volně použitelný a upravitelný.
 
-Projekt vychází z **[petus/Meteo‑PlaneRadar](https://github.com/petus/Meteo-PlaneRadar)** (autor Petr, původně pro **chiptron.cz**), který sám staví na projektech MatixYo/ESP32‑Plane‑Radar, mylms/ESP‑MeteoRadar a Selbyl/ESP32‑S3‑Touch‑LCD‑2.1_Plane‑Radar. Port a rozšíření (ILI9488 480×320, dotyk FT5436, animace meteoradaru) pro **laskakit.cz**.
+Projekt vychází z **[petus/MeteoPlaneRadar](https://github.com/petus/MeteoPlaneRadar)** (autor Petr, původně pro **chiptron.cz**), který sám staví na projektech MatixYo/ESP32‑Plane‑Radar, mylms/ESP‑MeteoRadar a Selbyl/ESP32‑S3‑Touch‑LCD‑2.1_Plane‑Radar. Port a rozšíření (ILI9488 480×320, dotyk FT5436, animace meteoradaru) pro **laskakit.cz**.
 
 Vloženou QRCode knihovnu napsal ricmoo (MIT). Data ČHMÚ a adsb.fi podléhají podmínkám poskytovatelů.
