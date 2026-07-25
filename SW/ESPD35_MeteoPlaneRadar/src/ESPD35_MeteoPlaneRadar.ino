@@ -61,7 +61,9 @@ Arduino_GFX*     panel = new Arduino_ILI9488_18bit(bus, TFT_RST, LCD_ROTATION, f
 // gfx = canvas. Vsechno kresleni jde sem, flush() posle cely snimek najednou.
 Arduino_GFX* gfx = new Arduino_Canvas(LCD_WIDTH, LCD_HEIGHT, panel);
 
-static void netPoll() { yield(); }
+// yield() pri dlouhych prenosech + nakrmi watchdog, aby stahovani ADS-B
+// (bufferovane cteni + jeden retry) a meteoradaru nemohlo trefit WDT.
+static void netPoll() { yield(); Watchdog_Feed(); }
 
 // ---------------------------------------------------------------------------
 //  Podsviceni (PWM), kompatibilni s core 2.x i 3.x.

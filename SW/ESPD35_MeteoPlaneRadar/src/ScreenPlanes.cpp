@@ -28,6 +28,15 @@ static int s_rangeIdx = 1;
 
 static float currentRange() { return RANGES_KM[s_rangeIdx]; }
 
+// Interval stahovani podle rozsahu. Vetsi okruh vraci vic dat a je mene casove
+// kriticky, takze se stahuje redceji - setrnejsi k bezplatnemu API adsb.fi.
+static unsigned long basePeriodMs() {
+  float r = currentRange();
+  if (r <= 25.0f) return 5000;    // 10 / 25 km
+  if (r <= 50.0f) return 10000;   // 50 km
+  return 15000;                   // 100 km
+}
+
 static unsigned long s_nextFetch = 0;
 static bool   s_dataOk = false;
 static String s_status = "Start...";
@@ -136,7 +145,9 @@ bool ScreenPlanes_Tick() {
     s_status = "Stahuji...";
     s_dataOk = ADSB_Fetch(Settings_Lat(), Settings_Lon(), currentRange());
     s_status = s_dataOk ? "OK" : "Chyba";
-    s_nextFetch = millis() + (s_dataOk ? 5000 : 15000);
+    // Normalni kadence podle rozsahu; po chybe dvojnasobek intervalu.
+    unsigned long period = basePeriodMs();
+    s_nextFetch = millis() + (s_dataOk ? period : period * 2);
     return true;
   }
   return false;

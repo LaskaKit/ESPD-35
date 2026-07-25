@@ -6,7 +6,7 @@
 #include <Arduino.h>
 
 #define ADSB_API_BASE "https://opendata.adsb.fi/api/v3/lat/"
-#define ADSB_MAX 40           // strop letadel k vykresleni
+#define ADSB_MAX 100           // strop letadel k vykresleni
 
 struct Aircraft {
   float lat = 0;
