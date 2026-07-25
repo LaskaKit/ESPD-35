@@ -22,6 +22,7 @@ Data z [adsb.fi](https://adsb.fi/) — veřejná ADS‑B síť, zdarma a bez kl�
 - V pravém panelu **detail nejbližšího letadla** k tvé poloze (volací znak, typ, vzdálenost, výška, rychlost, kurz, stoupání/klesání). Krátkým klepnutím na letadlo ho v detailu zafixuješ (bílý kroužek), klepnutím do prázdna zpět na automaticky nejbližší.
 - Tlačítka v panelu: **přepnutí jednotek** (letecké ft/kt ↔ metrické m/km‑h) a **WiFi + poloha** (spustí konfigurační portál).
 - **Rozsahy:** 10 / 25 / 50 / 100 km.
+- **Stahování z adsb.fi podle rozsahu** (≈5 s do 25 km, 10 s do 50 km, 15 s na 100 km). Data se čtou jako celé tělo a parsují až kompletní, takže neúplné/uříznuté stažení už radar nevymaže — při chybě zůstane poslední platný snímek a po chybě se interval zdvojnásobí, aby API nebylo zbytečně zatěžováno.
 
 ### 🌧️ Meteoradar ČHMÚ s animací
 
