@@ -63,7 +63,12 @@ V Arduino IDE (**Nástroje → Spravovat knihovny**) nainstaluj:
 | **PNGdec** | Larry Bank (bitbank2) | dekódování snímků ČHMÚ |
 | **ArduinoJson** (v7) | Benoit Blanchon | parsování dat z adsb.fi a ip‑api |
 | **WiFiManager** | tzapu | konfigurační WiFi portál |
-| **QRCode** | Richard Moore (ricmoo) | QR kód v portálu |
+| **ElegantOTA** | ayushsharma82 | aktualizace firmwaru přes WiFi |
+| **QRCode** | Richard Moore (ricmoo) | QR kód v portálu (přibaleno v projektu) |
+
+> ElegantOTA se používá ve **výchozím (synchronním) režimu** nad `WebServer`
+> z ESP32 core — nic se v knihovně needituje a `ESPAsyncWebServer` ani
+> `AsyncTCP` nejsou potřeba.
 
 **Dotyk** používá knihovnu **FT6236** (DustinWatts, s upraveným CHIPID/VENDID pro FT5436), kterou LaskaKit přikládá k desce.
 
@@ -78,9 +83,17 @@ V Arduino IDE (**Nástroje → Spravovat knihovny**) nainstaluj:
 | Deska | ESP32S3 Dev Module |
 | **PSRAM** | **OPI PSRAM** ← nutné (bez toho zůstane displej černý) |
 | Flash Size | 16MB (128Mb) |
-| Partition Scheme | 16M Flash (3MB APP / 9.9MB FATFS) — nebo cokoli s APP ≥ 3 MB |
+| **Partition Scheme** | **Custom** ← použije se přiložený `src/partitions.csv` |
 | USB CDC On Boot | Disable |
 | Upload Speed | 921600 |
+
+Partition **Custom** je pro OTA nutná — přiložená tabulka má dvě aplikační
+oblasti (2× 6 MB), aby bylo kam nahrát novou verzi. Po překladu zkontroluj
+v logu, že se hlásí `of 6291456 bytes`.
+
+Nastavení jako časová zóna, výchozí poloha, rozsahy nebo limity najdeš
+pohromadě v **`src/Config.h`**. Verze firmwaru je v **`src/Version.h`**,
+historie změn v **[CHANGELOG.md](CHANGELOG.md)**.
 
 ---
 
@@ -113,7 +126,7 @@ Piny jsou v `Config.h` a jsou **předvyplněné pro ESPD‑3.5 Rev 3.2**:
 
 ### První spuštění
 
-1. Zařízení vytvoří otevřenou WiFi síť **`ESPD35_MeteoPlaneRadar-Setup`**.
+1. Zařízení vytvoří otevřenou WiFi síť **`ESPD35-MeteoPlaneRadar`**.
 2. Na displeji se ukáže **QR kód** — naskenuj telefonem, připoj se a vyber domácí WiFi (případně zadej ručně polohu lat/lon).
 3. Poloha se jinak zjistí automaticky podle IP.
 
@@ -123,14 +136,65 @@ Piny jsou v `Config.h` a jsou **předvyplněné pro ESPD‑3.5 Rev 3.2**:
 
 **Dotyk (kapacitní):**
 
+Obrazovky jsou tři: **Letadla → Meteoradar → Nastavení** (dokola).
+
 | Gesto | Funkce |
 | --- | --- |
-| **Dlouhý stisk (> 0,5 s) kdekoli** | přepnutí Letadla ↔ Meteoradar |
+| **Klepnutí na tečky dole uprostřed** | skok přímo na danou obrazovku |
+| **Dlouhý stisk (> 0,5 s) v levé polovině** | předchozí obrazovka |
+| **Dlouhý stisk v pravé polovině** | následující obrazovka |
 | Přejetí prstem vlevo/vpravo | změna rozsahu aktivní obrazovky |
-| Krátké klepnutí na letadlo | detail letadla (bílý kroužek) |
-| Klepnutí do prázdné mapy | zpět na automaticky nejbližší letadlo |
-| Tlačítko „Jednotky" v panelu | přepnutí letecké ↔ metrické |
-| Tlačítko „WiFi + poloha" v panelu | spustí konfigurační portál |
+| Krátké klepnutí na letadlo | zafixování letadla v detailu (bílý kroužek) |
+| Klepnutí do prázdné mapy / do panelu | zpět na automaticky nejbližší letadlo |
+
+> **Deska nemá žádné tlačítko** — ESPD‑3.5 je celá ovládaná dotykem.
+
+Jas, jednotky, orientace mapy, WiFi + poloha, aktualizace firmwaru a tovární
+reset jsou na obrazovce **Nastavení**. Na ní dlouhý stisk *na tlačítku* provede
+tlačítko, ne přepnutí obrazovky — přepíná se ve volném pruhu nahoře a dole,
+nebo tečkami.
+
+### Tovární reset
+
+Červené tlačítko **Tovarni reset** dole na obrazovce Nastavení. Protože se
+dotykem dá trefit i omylem, vyžaduje **dvě klepnutí**: první ho natáhne (změní
+se na `Opravdu? Klepni`), druhé do 6 s reset provede. Klepnutí kamkoli jinam
+ho zruší; když nic neuděláš, sám zhasne.
+
+Smaže uložené WiFi údaje i nastavení (poloha, jas, jednotky, orientace, rozsahy)
+a desku restartuje — pak se zase přihlásí konfiguračním portálem.
+
+> Kdyby dotyk vůbec nefungoval, reset touhle cestou nejde. Záchranou je nahrání
+> `*.merged.bin` přes USB, které přepíše i NVS.
+
+### Orientace mapy („Nahoře")
+
+V Nastavení se dá zvolit, **který světový směr je nahoře** na radaru letadel —
+tedy směr, kterým se díváš z okna. Nastavíš `V` a letadla na displeji jsou ve
+stejném směru jako ta za sklem. Osm poloh po 45°, vedle tlačítek je kompasový
+náhled a po obvodu radaru značky S/V/J/Z.
+
+Meteoradar se záměrně **neotáčí** — srážková mapa se čte severem nahoru.
+
+---
+
+## Aktualizace firmwaru přes WiFi (OTA)
+
+Od verze 0.3.0 jde nový firmware nahrát bezdrátově.
+
+1. V zařízení jdi do **Nastavení** a klepni na **Firmware update (OTA)**.
+2. Zařízení vytvoří WiFi síť `ESPD35-MeteoPlaneRadar` (bez hesla) a ukáže QR kód.
+3. V prohlížeči otevři **`http://192.168.4.1/update`** a nahraj soubor
+   `ESPD35_MeteoPlaneRadar.ino.bin` — **ten bez `merged`**.
+4. Průběh je vidět na displeji i v prohlížeči; deska se sama restartuje.
+
+Telefon nahlásí, že síť nemá internet — to nevadí, soubor už máš stažený.
+Když se aktualizace nepovede, zůstane v desce původní verze.
+
+> ### ⚠️ Přechod z verze 0.2 a nižší
+> Verze 0.3.0 mění rozdělení paměti. Poprvé je proto nutné nahrát
+> `*.merged.bin` **přes USB** — bezdrátová aktualizace by neměla kam zapsat.
+> Stačí to jednou.
 
 ---
 
@@ -139,11 +203,16 @@ Piny jsou v `Config.h` a jsou **předvyplněné pro ESPD‑3.5 Rev 3.2**:
 Vypisují se jen základní informace:
 
 ```
-=== ESPD35 PlaneRadar ===
-WiFi: MojeSit  IP: 192.168.1.42
-Letadla: 11
+=== ESPD35_MeteoPlaneRadar v0.3.0 ===
+WiFi ok, IP 192.168.1.42
+GeoIP: 50.0755, 14.4378 - Prague
+Letadla: 11 (8421 bajtu)
 Meteoradar: 6 ramcu
 ```
+
+Podrobnější ladicí výpisy (gesta dotyku, důvod zrušení výběru letadla, počet
+zahozených vadných čtení dotyku) se zapínají v `src/Config.h` přepínačem
+`TOUCH_DEBUG`. Pro běžný provoz ho nech na `0`.
 
 ---
 
@@ -151,6 +220,12 @@ Meteoradar: 6 ramcu
 
 - **Displej zůstává černý** → zkontroluj **PSRAM: OPI PSRAM** v Nástrojích. To je nejčastější příčina.
 - **Dotyk nereaguje / souřadnice přehozené** → ověř `I2C_SDA`/`I2C_SCL` v `Config.h`; případně přehoď `TOUCH_ROTATION` mezi 3 a 1.
+- **Displej občas „sám" zruší výběr letadla** → zapni `TOUCH_DEBUG 1` a sleduj
+  řádky `TOUCH: zahozeno N vadnych cteni`. Když jich je hodně, je problém na
+  I2C sběrnici (rušení, dlouhé vodiče), ne v datech z adsb.fi.
+- **OTA hlásí, že není kam zapsat** → v Nástrojích není zvolený
+  **Partition Scheme = Custom**, takže se nepoužila přiložená tabulka se dvěma
+  aplikačními oblastmi.
 - **Meteo hlásí „snimek moc siroky"** → verze PNGdec s malým řádkovým bufferem; snímek ČHMÚ (680 px) se ale běžně vejde, jde spíš o jiný produkt.
 - **Prázdná mapa u meteo** → když zrovna neprší, kompozit je skoro černý. To je normální.
 - **Radar letadel je prázdný** → zkus větší rozsah; v noci nebo mimo koridory nemusí být nic.
