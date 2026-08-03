@@ -22,6 +22,10 @@
 // Globalni displej (off-screen canvas v PSRAM, definovany v .ino).
 extern Arduino_GFX* gfx;
 
+// Podsviceni displeje v procentech (PWM). Definovano v .ino, pouziva ho
+// obrazovka Nastaveni (posuvnik jasu) a OTA.
+void Backlight_Set(uint8_t pct);
+
 // Vycentrovany text pres celou sirku displeje (velikost 1-4).
 void UI_TextCentered(const char* text, int cy, uint16_t color, uint8_t size);
 

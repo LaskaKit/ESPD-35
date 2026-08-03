@@ -22,11 +22,23 @@ static int s_count = 0;
 // Docasny buffer, do ktereho parsujeme. Viditelny seznam (s_list/s_count) se
 // prepise az po plnem a spravnem parsu - tak uriznuty JSON nikdy nevymaze radar.
 static Aircraft s_tmp[ADSB_MAX];
+// Ctverec vzdalenosti kazdeho letadla v s_tmp od stredu (km^2). Slouzi k tomu,
+// aby se pri prekroceni ADSB_MAX drzela NEJBLIZSI letadla, ne prvnich sto
+// v poradi, ve kterem je posle server (viz smycku parsovani nize).
+static float s_tmpD2[ADSB_MAX];
 static void (*s_poll)() = nullptr;
 
 void ADSB_SetPollFn(void (*fn)()) { s_poll = fn; }
 int  ADSB_Count() { return s_count; }
 const Aircraft* ADSB_List() { return s_list; }
+
+int ADSB_FindByIcao(const char* icao) {
+  if (!icao || !icao[0]) return -1;
+  for (int i = 0; i < s_count; i++) {
+    if (strcmp(s_list[i].icao, icao) == 0) return i;
+  }
+  return -1;   // uz neni v datech
+}
 
 static void poll() { if (s_poll) s_poll(); }
 
@@ -207,46 +219,91 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
     }
 
     // Parsuj do DOCASNEHO seznamu; do ziveho commitni az pri uspechu.
+    //
+    // Pri prekroceni ADSB_MAX se NEUTINA slepe. Puvodne se pri naplneni pole
+    // proste skoncilo (break), takze o tom, ktera letadla uvidite, rozhodovalo
+    // poradi v odpovedi serveru - u velkeho rozsahu nad hustym provozem tak
+    // mohlo vypadnout letadlo primo nad vami. Nove se drzi NEJBLIZSICH
+    // ADSB_MAX letadel: po naplneni pole se nove letadlo porovna s dosud
+    // nejvzdalenejsim a pripadne ho nahradi.
+    const float latr0 = (float)lat * 0.0174532925f;
+    const float cosLat0 = cosf(latr0);
+
     JsonArrayConst ac = doc["ac"].as<JsonArrayConst>();
-    int n = 0;
+    int   n = 0;
+    int   worstIdx = -1;      // slot s nejvetsi vzdalenosti (jen kdyz je plno)
+    float worstD2  = -1.0f;
+    int   dropped  = 0;       // kolik letadel se nevešlo (jen pro vypis)
+
     for (JsonObjectConst plane : ac) {
       float plat, plon;
       if (!readFloat(plane, "lat", &plat) || !readFloat(plane, "lon", &plon)) continue;
-      if (n >= ADSB_MAX) break;
-      s_tmp[n].lat = plat;
-      s_tmp[n].lon = plon;
+      // Ochrana proti nesmyslnym souradnicim (NaN projde i porovnanim, proto
+      // se testuje pres !(a && b), ne pres opacnou podminku).
+      if (!(plat >= -90.0f && plat <= 90.0f && plon >= -180.0f && plon <= 180.0f)) continue;
+      if (plat == 0.0f && plon == 0.0f) continue;
+
+      // Letadla NA ZEMI zahazujeme uz tady, aby nikdy nezabrala misto stroji
+      // ve vzduchu. U letiste by jinak dokazala zaplnit cely ADSB_MAX.
+      JsonVariantConst ab = plane["alt_baro"];
+      if (ab.is<const char*>() && strcmp(ab.as<const char*>(), "ground") == 0) continue;
+
+      // Vzdalenost od stredu (km^2, plocha azimutalni aproximace - staci nam
+      // na porovnavani, nemusi byt presna).
+      float dx = (plon - (float)lon) * 111.0f * cosLat0;
+      float dy = (plat - (float)lat) * 111.0f;
+      float d2 = dx * dx + dy * dy;
+
+      int slot;
+      if (n < ADSB_MAX) {
+        slot = n++;
+      } else {
+        if (worstIdx < 0) {   // dopocitat nejvzdalenejsi az kdyz je poprve plno
+          worstD2 = -1.0f;
+          for (int i = 0; i < ADSB_MAX; i++)
+            if (s_tmpD2[i] > worstD2) { worstD2 = s_tmpD2[i]; worstIdx = i; }
+        }
+        dropped++;
+        if (d2 >= worstD2) continue;   // dal nez nejvzdalenejsi -> nezajima nas
+        slot = worstIdx;
+        worstIdx = -1;                 // po nahrazeni se musi najit znovu
+      }
+
+      s_tmpD2[slot] = d2;
+      s_tmp[slot].lat = plat;
+      s_tmp[slot].lon = plon;
+      s_tmp[slot].onGround = false;
       // Smer letu - poznamename, jestli vubec existuje.
       float tr = 0;
       if (readFloat(plane, "track", &tr) || readFloat(plane, "true_heading", &tr)) {
-        s_tmp[n].track = tr;
-        s_tmp[n].hasTrack = true;
+        s_tmp[slot].track = tr;
+        s_tmp[slot].hasTrack = true;
       } else {
-        s_tmp[n].track = 0;
-        s_tmp[n].hasTrack = false;
+        s_tmp[slot].track = 0;
+        s_tmp[slot].hasTrack = false;
       }
       // Vyska (baro), rychlost, stoupani.
-      JsonVariantConst ab = plane["alt_baro"];
-      s_tmp[n].onGround = ab.is<const char*>() && strcmp(ab.as<const char*>(), "ground") == 0;
       float f = 0;
-      s_tmp[n].altFt = (!s_tmp[n].onGround && readFloat(plane, "alt_baro", &f)) ? f : 0;
-      s_tmp[n].gsKt = readFloat(plane, "gs", &f) ? f : 0;
-      s_tmp[n].baroRate = readFloat(plane, "baro_rate", &f) ? f : 0;
+      s_tmp[slot].altFt    = readFloat(plane, "alt_baro", &f) ? f : 0;
+      s_tmp[slot].gsKt     = readFloat(plane, "gs", &f) ? f : 0;
+      s_tmp[slot].baroRate = readFloat(plane, "baro_rate", &f) ? f : 0;
       // Typ letadla (ruzne klice dle zdroje).
       const char* ty = plane["t"] | (plane["type"] | "");
-      strncpy(s_tmp[n].type, ty, sizeof(s_tmp[n].type) - 1);
-      s_tmp[n].type[sizeof(s_tmp[n].type) - 1] = '\0';
+      strncpy(s_tmp[slot].type, ty, sizeof(s_tmp[slot].type) - 1);
+      s_tmp[slot].type[sizeof(s_tmp[slot].type) - 1] = '\0';
       // ICAO hex - stabilni identifikator (nemeni se mezi stazenimi).
       const char* hx = plane["hex"] | "";
-      strncpy(s_tmp[n].icao, hx, sizeof(s_tmp[n].icao) - 1);
-      s_tmp[n].icao[sizeof(s_tmp[n].icao) - 1] = '\0';
-      copyCallsign(&s_tmp[n], plane);
-      n++;
+      strncpy(s_tmp[slot].icao, hx, sizeof(s_tmp[slot].icao) - 1);
+      s_tmp[slot].icao[sizeof(s_tmp[slot].icao) - 1] = '\0';
+      copyCallsign(&s_tmp[slot], plane);
     }
 
     // Commitni docasny snimek do ziveho seznamu naraz.
     for (int i = 0; i < n; i++) s_list[i] = s_tmp[i];
     s_count = n;
-    Serial.printf("Letadla: %d (%ld bajtu)\n", n, len);
+    if (dropped) Serial.printf("Letadla: %d (%ld bajtu, %d vzdalenych vynechano)\n",
+                               n, len, dropped);
+    else         Serial.printf("Letadla: %d (%ld bajtu)\n", n, len);
     return true;
   }
   return false;

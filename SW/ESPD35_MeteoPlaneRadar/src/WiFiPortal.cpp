@@ -30,9 +30,10 @@ static void drawApScreen() {
   gfx->setTextSize(2); gfx->setTextColor(C_WHITE);
   gfx->setCursor(tx, 110); gfx->print("1) Pripojte");
   gfx->setCursor(tx, 134); gfx->print("   WiFi sit:");
-  gfx->setTextColor(C_YELLOW);
-  gfx->setCursor(tx, 162); gfx->print("ESPD35-MeteoPlane");
-  gfx->setCursor(tx, 184); gfx->print("Radar-Setup");
+  // Nazev site se bere z AP_SSID (Config.h), aby se pri jeho zmene nemusel
+  // hlidat jeste opsany text na displeji.
+  gfx->setTextColor(C_YELLOW); gfx->setTextSize(1);
+  gfx->setCursor(tx, 164); gfx->print(AP_SSID);
   gfx->setTextColor(C_GRAY); gfx->setTextSize(1);
   gfx->setCursor(tx, 214); gfx->print("(sit bez hesla)");
   gfx->setTextColor(C_WHITE); gfx->setTextSize(2);
@@ -81,6 +82,9 @@ bool WiFi_ConnectOrPortal() {
   bool ok = wm.autoConnect(AP_SSID, apPass());
   if (ok) {
     saveParams(pLat, pLon);
+    Serial.printf("WiFi ok, IP %s\n", WiFi.localIP().toString().c_str());
+  } else {
+    Serial.println("WiFi nepripojeno");
   }
   return ok;
 }

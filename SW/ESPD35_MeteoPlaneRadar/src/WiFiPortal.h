@@ -3,9 +3,7 @@
 // =============================================================================
 #pragma once
 #include <Arduino.h>
-
-#define AP_SSID     "ESPD35_MeteoPlaneRadar-Setup"
-#define AP_PASSWORD ""            // prazdne = otevrena sit
+#include "Config.h"   // AP_SSID / AP_PASSWORD
 
 bool   WiFi_ConnectOrPortal();    // pripoji se, nebo spusti portal (blokujici)
 void   WiFi_StartPortal();        // rucne spusti portal (blokujici)

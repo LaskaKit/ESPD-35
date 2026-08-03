@@ -1,0 +1,21 @@
+# ESPD35_MeteoPlaneRadar - tabulka oddilu pro OTA (ESP32-S3, 16 MB flash).
+#
+# Dva aplikacni sloty (ota_0 / ota_1), aby bylo kam nahrat novou verzi
+# bezdratove. Soubor patri do slozky sketche; Arduino-ESP32 core pouzije
+# sketch-lokalni partitions.csv, kdyz v Nastroje -> Partition Scheme zvolite
+# "Custom".
+#
+# Po prekladu zkontrolujte v logu, ze se hlasi "of 6291456 bytes" - to je
+# potvrzeni, ze se pouzila TATO tabulka a ne vychozi.
+#
+# POZOR: prechod z verze bez OTA (0.1 / 0.2) na tuto tabulku nejde udelat
+# bezdratove - rozdeleni pameti se meni, takze je potreba jednou nahrat
+# *.merged.bin pres USB.
+#
+# Name,     Type, SubType,  Offset,    Size
+nvs,        data, nvs,      0x9000,    0x5000,
+otadata,    data, ota,      0xE000,    0x2000,
+app0,       app,  ota_0,    0x10000,   0x600000,
+app1,       app,  ota_1,    0x610000,  0x600000,
+spiffs,     data, spiffs,   0xC10000,  0x3E0000,
+coredump,   data, coredump, 0xFF0000,  0x10000,

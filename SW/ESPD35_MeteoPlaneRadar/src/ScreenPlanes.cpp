@@ -1,8 +1,8 @@
 // =============================================================================
 //  ESPD35_MeteoPlaneRadar - obrazovka radaru letadel (adsb.fi).
-//  Port z petus/Meteo-PlaneRadar prizpusobeny obdelnikovemu displeji 480x320:
+//  Layout pro obdelnikovy displej 480x320:
 //    - MAPA vlevo (3/4), stred = poloha uzivatele
-//    - DETAIL vpravo (1/4), automaticky NEJBLIZSI letadlo k poloze uzivatele
+//    - DETAIL vpravo (1/4)
 //
 //  MERITKO (dulezite): projekce je izotropni - stejny pocet px na km ve
 //  vodorovnem i svislem smeru. Diky tomu SEDI polohy letadel i podkres mest.
@@ -10,6 +10,10 @@
 //  Protoze je mapove okno obdelnikove, definujeme rozsah jako svisly polomer;
 //  vodorovne se diky sirsimu oknu ukaze o neco vetsi vyrez, ale meritko
 //  zustava STEJNE v obou osach (zadne zkresleni vzdalenosti).
+//
+//  ORIENTACE MAPY: uzivatel v Nastaveni voli, ktery svetovy smer je NAHORE
+//  (smer, kterym se diva z okna). Otaci se PROJEKCE, ne displej - obrys, mesta
+//  i ikony letadel se tak otoci spolecne a dotykove souradnice zustavaji platne.
 // =============================================================================
 #include "ScreenPlanes.h"
 #include "ADSB.h"
@@ -20,9 +24,11 @@
 
 #include <WiFi.h>
 #include <math.h>
+#include <string.h>
+#include <time.h>
 
-// Dostupne rozsahy (polomer v km).
-static const float RANGES_KM[] = {10.0f, 25.0f, 50.0f, 100.0f};
+// Dostupne rozsahy (polomer v km) - z Config.h.
+static const float RANGES_KM[] = PLANE_RANGES_KM;
 static const int   RANGE_COUNT = sizeof(RANGES_KM) / sizeof(RANGES_KM[0]);
 static int s_rangeIdx = 1;
 
@@ -32,47 +38,89 @@ static float currentRange() { return RANGES_KM[s_rangeIdx]; }
 // kriticky, takze se stahuje redceji - setrnejsi k bezplatnemu API adsb.fi.
 static unsigned long basePeriodMs() {
   float r = currentRange();
-  if (r <= 25.0f) return 5000;    // 10 / 25 km
-  if (r <= 50.0f) return 10000;   // 50 km
-  return 15000;                   // 100 km
+  if (r <= ADSB_NEAR_KM) return ADSB_PERIOD_NEAR_MS;
+  if (r <= ADSB_MID_KM)  return ADSB_PERIOD_MID_MS;
+  return ADSB_PERIOD_FAR_MS;
 }
 
 static unsigned long s_nextFetch = 0;
 static bool   s_dataOk = false;
 static String s_status = "Start...";
 
-// Zadost o spusteni WiFi/AP portalu (blokujici -> obsluha probiha v .ino).
-static bool s_wantPortal = false;
-bool ScreenPlanes_WantsPortal() { return s_wantPortal; }
-void ScreenPlanes_ClearPortal() { s_wantPortal = false; }
+// -----------------------------------------------------------------------------
+//  Rucne vybrane letadlo
+//
+//  Drzi se pres ICAO hex - stabilni ID, ktere prezije prehazeni poradi v datech
+//  mezi stazenimi. Index v poli se drzet NESMI: seznam se pri kazdem stazeni
+//  stavi znovu a jedno letadlo, ktere opusti oblast, posune vsechna za nim.
+//  "" = nic vybrano -> detail ukazuje automaticky nejblizsi letadlo.
+// -----------------------------------------------------------------------------
+static char s_selIcao[8] = "";
 
-// Geometrie tlacitek v pravem panelu.
-static const int BTN_X       = MAP_W + 4;
-static const int BTN_W       = PANEL_W - 8;
-static const int BTN_H       = 28;
-static const int BTN_UNITS_Y = 212;   // tlacitko: prepnuti jednotek
-static const int BTN_WIFI_Y  = 246;   // tlacitko: WiFi + poloha (AP portal)
+// Tolerance vypadku. adsb.fi obcas letadlo v jednom stazeni vynecha a v dalsim
+// ho zase posle. Kdyby se vyber zrusil hned pri prvnim vypadku, vypadalo by to,
+// ze detail sam uskocil na jine letadlo. Behem grace periody se drzi posledni
+// zname hodnoty (s_selCache) s poznamkou "signal ztracen".
+static int      s_selMiss   = 0;    // po sobe jdouci stazeni bez tohohle letadla
+static Aircraft s_selCache;         // posledni znama data vybraneho letadla
+static bool     s_selCacheOk = false;
 
-// Rucne vybrane letadlo (dotykem). Drzime pres ICAO hex - stabilni ID, ktere
-// prezije prehazeni poradi v datech mezi stahovanimi. "" = automaticky nejblizsi.
-static char s_selIcao[7] = "";
 // Obrazovkove pozice + ICAO letadel z posledniho vykresleni (pro tap-to-select).
 static int  s_planeX[ADSB_MAX];
 static int  s_planeY[ADSB_MAX];
-static char s_planeIcao[ADSB_MAX][7];
+static char s_planeIcao[ADSB_MAX][8];
 static int  s_planeN = 0;
 
-// Dohleda index letadla v aktualnim poli podle ICAO. -1 = neni.
-static int findIdxByIcao(const char* icao) {
-  if (!icao || !icao[0]) return -1;
-  const Aircraft* list = ADSB_List();
-  int n = ADSB_Count();
-  for (int i = 0; i < n; i++) if (strcmp(list[i].icao, icao) == 0) return i;
-  return -1;
+bool ScreenPlanes_DetailOpen() { return s_selIcao[0] != '\0'; }
+
+// reason = kratky text do seriove linky, aby slo poznat PROC se vyber zrusil
+// (falesny dotyk vs. letadlo skutecne zmizelo z dat).
+static void selectNone(const char* reason) {
+#if TOUCH_DEBUG
+  if (s_selIcao[0]) Serial.printf("SEL: zruseno (%s) icao=%s\n", reason, s_selIcao);
+#else
+  (void)reason;
+#endif
+  s_selIcao[0] = '\0';
+  s_selMiss = 0;
+  s_selCacheOk = false;
+}
+
+static void selectIcao(const char* icao) {
+  strncpy(s_selIcao, icao, sizeof(s_selIcao) - 1);
+  s_selIcao[sizeof(s_selIcao) - 1] = '\0';
+  s_selMiss = 0;
+  s_selCacheOk = false;
+#if TOUCH_DEBUG
+  Serial.printf("SEL: vybrano icao=%s\n", s_selIcao);
+#endif
+}
+
+void ScreenPlanes_CloseDetail() { selectNone("rucne"); }
+
+// -----------------------------------------------------------------------------
+//  Otoceni mapy - viz komentar v hlavicce souboru.
+//
+//      uhel na obrazovce pro azimut b  =  b - topBearing   (0 = nahoru, po smeru)
+//
+//  Pri pohledu na vychod (top = 90) je sever vlevo, presne jako ve skutecnosti.
+//  Kdyby se zadavalo "o kolik mapu otocit", byla by potreba opacna hodnota
+//  (360 - azimut) a mapa by pusobila zrcadlove.
+// -----------------------------------------------------------------------------
+static float    s_rotSin = 0.0f, s_rotCos = 1.0f;
+static uint16_t s_topDeg = 0xFFFF;   // vynuti prvni prepocet
+
+static void refreshRotation() {
+  uint16_t deg = Settings_TopBearing();
+  if (deg == s_topDeg) return;
+  s_topDeg = deg;
+  float r = (float)deg * 0.0174532925f;
+  s_rotSin = sinf(r);
+  s_rotCos = cosf(r);
 }
 
 // -----------------------------------------------------------------------------
-//  Projekce lat/lon -> obrazovka (sever nahoru), izotropni meritko.
+//  Projekce lat/lon -> obrazovka, izotropni meritko, s otocenim.
 //  clat/clon = poloha uzivatele (stred), rangeKm = zvoleny rozsah.
 // -----------------------------------------------------------------------------
 static void project(float lat, float lon, double clat, double clon,
@@ -80,12 +128,16 @@ static void project(float lat, float lon, double clat, double clon,
   float latr = clat * 0.0174532925f;
   float dxKm = (lon - clon) * 111.0f * cosf(latr);   // vychod (+)
   float dyKm = (lat - clat) * 111.0f;                // sever (+)
+  // Otoc lokalni vektor vychod/sever tak, aby zvoleny azimut skoncil nahore.
+  float rx = dxKm * s_rotCos - dyKm * s_rotSin;
+  float ry = dxKm * s_rotSin + dyKm * s_rotCos;
   float scale = (float)R_RADIUS / rangeKm;           // px na km (STEJNE X i Y)
-  *sx = MAP_CX + (int)lroundf(dxKm * scale);
-  *sy = MAP_CY - (int)lroundf(dyKm * scale);
+  *sx = MAP_CX + (int)lroundf(rx * scale);
+  *sy = MAP_CY - (int)lroundf(ry * scale);
 }
 
 // Vzdalenost letadla od stredu (uzivatele) v km - pro vyber nejblizsiho.
+// Na otoceni mapy nezavisi.
 static float distKm(float lat, float lon, double clat, double clon) {
   float latr = clat * 0.0174532925f;
   float dxKm = (lon - clon) * 111.0f * cosf(latr);
@@ -109,6 +161,7 @@ static uint16_t altColor(float altFt) {
 }
 
 // Ikona letadla natocena podle kurzu. Bez kurzu -> krouzek s teckou.
+// trackDeg uz musi byt OPRAVENY o otoceni mapy (viz volani v Draw).
 static void drawPlane(int x, int y, float trackDeg, bool hasTrack, uint16_t col) {
   if (!hasTrack) {
     gfx->drawCircle(x, y, 7, col);
@@ -134,9 +187,10 @@ static void drawPlane(int x, int y, float trackDeg, bool hasTrack, uint16_t col)
 }
 
 void ScreenPlanes_Enter() {
-  s_rangeIdx = Settings_RangeIdx();
-  if (s_rangeIdx >= RANGE_COUNT) s_rangeIdx = 1;
+  s_rangeIdx = Settings_PlaneRange();
+  if (s_rangeIdx >= RANGE_COUNT) s_rangeIdx = 1;   // ochrana proti stare hodnote
   s_nextFetch = 0;
+  refreshRotation();
 }
 
 bool ScreenPlanes_Tick() {
@@ -145,6 +199,20 @@ bool ScreenPlanes_Tick() {
     s_status = "Stahuji...";
     s_dataOk = ADSB_Fetch(Settings_Lat(), Settings_Lon(), currentRange());
     s_status = s_dataOk ? "OK" : "Chyba";
+
+    // Vyhodnoceni vyberu se dela TADY, tedy jednou za stazeni. V Draw() by se
+    // pocitalo vicekrat za sekundu a grace perioda by vyprsela behem chvile.
+    if (s_dataOk && s_selIcao[0]) {
+      int idx = ADSB_FindByIcao(s_selIcao);
+      if (idx >= 0) {
+        s_selCache   = ADSB_List()[idx];
+        s_selCacheOk = true;
+        s_selMiss    = 0;
+      } else if (++s_selMiss > DETAIL_GRACE_POLLS) {
+        selectNone("letadlo zmizelo z dat");
+      }
+    }
+
     // Normalni kadence podle rozsahu; po chybe dvojnasobek intervalu.
     unsigned long period = basePeriodMs();
     s_nextFetch = millis() + (s_dataOk ? period : period * 2);
@@ -155,8 +223,8 @@ bool ScreenPlanes_Tick() {
 
 void ScreenPlanes_ChangeRange(int dir) {
   s_rangeIdx = (s_rangeIdx + dir + RANGE_COUNT) % RANGE_COUNT;
-  Settings_SetRangeIdx(s_rangeIdx);
-  s_nextFetch = 0;   // hned stahnout pro novy rozsah
+  Settings_SetPlaneRange(s_rangeIdx);   // zapis do NVS je odlozeny
+  s_nextFetch = 0;                      // hned stahnout pro novy rozsah
 }
 
 void ScreenPlanes_NextRange() { ScreenPlanes_ChangeRange(+1); }
@@ -167,20 +235,14 @@ void ScreenPlanes_ToggleUnits() {
 
 // Kratky dotyk (tap). Vraci true, kdyz je potreba prekreslit.
 bool ScreenPlanes_HandleTap(int x, int y) {
-  // Dotek v pravem panelu -> tlacitka (jednotky / WiFi+poloha).
+  // Dotek v pravem panelu -> zrusit rucni vyber (zpet na nejblizsi).
+  // V panelu uz nejsou zadna tlacitka, takze se neni s cim trefit vedle.
   if (x >= MAP_W) {
-    if (x >= BTN_X && x <= BTN_X + BTN_W &&
-        y >= BTN_UNITS_Y && y <= BTN_UNITS_Y + BTN_H) {
-      ScreenPlanes_ToggleUnits();
-      return true;
-    }
-    if (x >= BTN_X && x <= BTN_X + BTN_W &&
-        y >= BTN_WIFI_Y && y <= BTN_WIFI_Y + BTN_H) {
-      s_wantPortal = true;     // spusti AP portal (obsluha v .ino)
-      return true;
-    }
-    return false;              // jinam v panelu -> nic
+    if (!s_selIcao[0]) return false;
+    selectNone("tap do panelu");
+    return true;
   }
+
   // Dotek v mape -> najdi nejblizsi vykreslene letadlo (do ~26 px).
   int best = -1;
   long bestD = 26L * 26L;
@@ -190,85 +252,99 @@ bool ScreenPlanes_HandleTap(int x, int y) {
     if (d < bestD) { bestD = d; best = i; }
   }
   if (best >= 0) {
-    strncpy(s_selIcao, s_planeIcao[best], sizeof(s_selIcao) - 1);
-    s_selIcao[sizeof(s_selIcao) - 1] = '\0';
+    selectIcao(s_planeIcao[best]);
   } else {
-    s_selIcao[0] = '\0';   // prazdny tap -> zpet na automaticky nejblizsi
+    if (!s_selIcao[0]) return false;
+    selectNone("tap mimo letadlo");
   }
   return true;
 }
 
 // -----------------------------------------------------------------------------
-//  Detailovy panel vpravo (1/4) - nejblizsi letadlo k poloze uzivatele.
+//  Detailovy panel vpravo (1/4).
+//
+//  ac == nullptr    -> v okruhu neni zadne letadlo
+//  pinned           -> letadlo je rucne zafixovane (jinak automaticky nejblizsi)
+//  stale            -> data jsou z cache, letadlo v poslednim stazeni chybelo
 // -----------------------------------------------------------------------------
-// Tlacitko v panelu: vyplneny obdelnik s vycentrovanym popiskem.
-static void drawButton(int y, uint16_t bg, const char* label) {
-  gfx->fillRoundRect(BTN_X, y, BTN_W, BTN_H, 6, bg);
-  gfx->drawRoundRect(BTN_X, y, BTN_W, BTN_H, 6, C_WHITE);
-  gfx->setTextSize(1); gfx->setTextColor(C_BLACK);
-  int tw = strlen(label) * 6;
-  int lx = BTN_X + (BTN_W - tw) / 2; if (lx < BTN_X + 2) lx = BTN_X + 2;
-  gfx->setCursor(lx, y + (BTN_H - 8) / 2);
-  gfx->print(label);
-}
-
-static void drawPanel(int detailIdx, float detailDistKm, bool pinned) {
+static void drawPanel(const Aircraft* ac, float distKmVal, bool pinned, bool stale) {
   const int x0 = MAP_W;
   gfx->fillRect(x0, 0, PANEL_W, LCD_HEIGHT, C_DKGRAY);     // pozadi panelu
   gfx->drawFastVLine(x0, 0, LCD_HEIGHT, C_CYAN);           // oddelovaci cara
 
-  const int tx = x0 + 8;
+  const int tx = x0 + 6;
   const bool metric = Settings_MetricUnits();
 
   gfx->setTextSize(1); gfx->setTextColor(C_CYAN);
-  gfx->setCursor(tx, 8);
-  gfx->print(pinned ? "VYBRANE" : "NEJBLIZSI");   // kratky nadpis
+  gfx->setCursor(tx, 6);
+  gfx->print(pinned ? "VYBRANE" : "NEJBLIZSI");
 
-  if (detailIdx < 0) {
+  if (!ac) {
     gfx->setTextSize(2); gfx->setTextColor(C_GRAY);
-    gfx->setCursor(tx, 44); gfx->print("zadne");
-    gfx->setCursor(tx, 66); gfx->print("v okruhu");
+    gfx->setCursor(tx, 40); gfx->print("zadne");
+    gfx->setCursor(tx, 62); gfx->print("v okruhu");
   } else {
-    const Aircraft& ac = ADSB_List()[detailIdx];
     char line[40];
 
-    // Volacka (nadpis).
+    // Volacka (nadpis). Pri size 2 se do panelu vejde 9 znaku.
     gfx->setTextSize(2); gfx->setTextColor(C_YELLOW);
-    gfx->setCursor(tx, 30);
-    gfx->print(ac.callsign[0] ? ac.callsign : "?");
+    gfx->setCursor(tx, 18);
+    gfx->print(ac->callsign[0] ? ac->callsign : "?");
 
-    int ty = 62;
+    // ICAO hex - podle nej se letadlo drzi mezi stazenimi.
+    gfx->setTextSize(1); gfx->setTextColor(C_GRAY);
+    gfx->setCursor(tx, 38); gfx->print(ac->icao);
+
+    // Upozorneni, ze data uz nejsou cerstva (grace perioda).
+    if (stale) {
+      gfx->setTextColor(C_YELLOW);
+      gfx->setCursor(tx, 52); gfx->print("signal ztracen");
+    }
+
+    int ty = 70;
     gfx->setTextSize(1); gfx->setTextColor(C_WHITE);
 
-    if (ac.type[0]) snprintf(line, sizeof(line), "Typ:  %s", ac.type);
-    else            snprintf(line, sizeof(line), "Typ:  -");
-    gfx->setCursor(tx, ty); gfx->print(line); ty += 22;
+    if (ac->type[0]) snprintf(line, sizeof(line), "Typ:  %s", ac->type);
+    else             snprintf(line, sizeof(line), "Typ:  -");
+    gfx->setCursor(tx, ty); gfx->print(line); ty += 20;
 
-    snprintf(line, sizeof(line), "Vzdal: %.1f km", detailDistKm);
-    gfx->setCursor(tx, ty); gfx->print(line); ty += 22;
+    snprintf(line, sizeof(line), "Vzdal: %.1f km", distKmVal);
+    gfx->setCursor(tx, ty); gfx->print(line); ty += 20;
 
-    if (metric) snprintf(line, sizeof(line), "Vyska: %.0f m", ac.altFt * 0.3048f);
-    else        snprintf(line, sizeof(line), "Vyska: %.0f ft", ac.altFt);
-    gfx->setCursor(tx, ty); gfx->print(line); ty += 22;
+    if (metric) snprintf(line, sizeof(line), "Vyska: %.0f m", ac->altFt * 0.3048f);
+    else        snprintf(line, sizeof(line), "Vyska: %.0f ft", ac->altFt);
+    gfx->setCursor(tx, ty); gfx->print(line); ty += 20;
 
-    if (metric) snprintf(line, sizeof(line), "Rychl: %.0f km/h", ac.gsKt * 1.852f);
-    else        snprintf(line, sizeof(line), "Rychl: %.0f kt", ac.gsKt);
-    gfx->setCursor(tx, ty); gfx->print(line); ty += 22;
+    if (metric) snprintf(line, sizeof(line), "Rychl: %.0f km/h", ac->gsKt * 1.852f);
+    else        snprintf(line, sizeof(line), "Rychl: %.0f kt", ac->gsKt);
+    gfx->setCursor(tx, ty); gfx->print(line); ty += 20;
 
-    if (ac.hasTrack) snprintf(line, sizeof(line), "Kurz:  %.0f deg", ac.track);
-    else             snprintf(line, sizeof(line), "Kurz:  neznamy");
-    gfx->setCursor(tx, ty); gfx->print(line); ty += 22;
+    if (ac->hasTrack) snprintf(line, sizeof(line), "Kurz:  %.0f deg", ac->track);
+    else              snprintf(line, sizeof(line), "Kurz:  neznamy");
+    gfx->setCursor(tx, ty); gfx->print(line); ty += 20;
 
     // Stoupani/klesani vc. kratke sipky (aby text nepretekal panel).
-    const char* ar = ac.baroRate > 100 ? "^" : (ac.baroRate < -100 ? "v" : "-");
-    if (metric) snprintf(line, sizeof(line), "V/S: %.1f m/s %s", ac.baroRate * 0.00508f, ar);
-    else        snprintf(line, sizeof(line), "V/S: %.0f ft/m %s", ac.baroRate, ar);
+    const char* ar = ac->baroRate > 100 ? "^" : (ac->baroRate < -100 ? "v" : "-");
+    if (metric) snprintf(line, sizeof(line), "V/S: %.1f m/s %s", ac->baroRate * 0.00508f, ar);
+    else        snprintf(line, sizeof(line), "V/S: %.0f ft/m %s", ac->baroRate, ar);
     gfx->setCursor(tx, ty); gfx->print(line);
   }
 
-  // Tlacitka dole: prepnuti jednotek + spusteni WiFi/AP portalu.
-  drawButton(BTN_UNITS_Y, C_CYAN,   metric ? "Jednotky: metricke" : "Jednotky: letecke");
-  drawButton(BTN_WIFI_Y,  C_YELLOW, "WiFi + poloha (AP)");
+  // Napoveda k ovladani (v panelu uz nejsou zadna tlacitka).
+  gfx->drawFastHLine(x0 + 4, 200, PANEL_W - 8, C_GRAY);
+  gfx->setTextSize(1); gfx->setTextColor(C_GRAY);
+  gfx->setCursor(tx, 208); gfx->print("Tap na letadlo");
+  gfx->setCursor(tx, 220); gfx->print("= zafixovat");
+  gfx->setCursor(tx, 236); gfx->print("Dlouhy stisk");
+  gfx->setCursor(tx, 248); gfx->print("= dalsi obrazovka");
+
+  // Hodiny z NTP - v panelu je na ne misto a hodi se u meteoradaru.
+  struct tm tmNow;
+  if (getLocalTime(&tmNow, 0)) {
+    char hm[8];
+    snprintf(hm, sizeof(hm), "%02d:%02d", tmNow.tm_hour, tmNow.tm_min);
+    UI_TextCenteredIn(hm, x0, PANEL_W, 282, C_WHITE, 2);
+  }
 
   gfx->setTextSize(1); gfx->setTextColor(C_GRAY);
   gfx->setCursor(tx, LCD_HEIGHT - 12); gfx->print("laskakit.cz");
@@ -297,14 +373,34 @@ static void drawLegend() {
   }
 }
 
-// Zony, kam letadla nekreslime (prekryvala by legendu a rozsah vlevo).
+// Znacky svetovych stran po obvodu kruhu rozsahu. Otaceji se spolu s mapou,
+// takze je hned videt, ktery smer je nahore.
+static void drawCompassMarks() {
+  static const char* N4[4] = { "S", "V", "J", "Z" };
+  const int r = R_RADIUS - 12;
+  for (int i = 0; i < 4; i++) {
+    float bearing = i * 90.0f;
+    float th = (bearing - (float)s_topDeg) * 0.0174532925f;
+    int x = MAP_CX + (int)lroundf(r * sinf(th));
+    int y = MAP_CY - (int)lroundf(r * cosf(th));
+    gfx->fillRect(x - 5, y - 6, 11, 13, C_BLACK);   // podklad kvuli citelnosti
+    gfx->setTextSize(1);
+    gfx->setTextColor(i == 0 ? C_RED : C_GRAY);     // sever cervene
+    gfx->setCursor(x - 2, y - 3);
+    gfx->print(N4[i]);
+  }
+}
+
+// Zony, kam letadla nekreslime (prekryvala by legendu, rozsah a tecky navigace).
 static bool inReservedZone(int sx, int sy) {
-  if (sx < 70 && sy < 112) return true;   // pocet letadel + legenda (vlevo nahore)
-  if (sx < 58 && sy > 286) return true;   // rozsah + indikator (vlevo dole)
+  if (sx < 70 && sy < 112) return true;                  // pocet letadel + legenda
+  if (sx < 58 && sy > 286) return true;                  // rozsah + indikator
+  if (sx > 196 && sx < 284 && sy > 292) return true;      // tecky prepinani obrazovek
   return false;
 }
 
 void ScreenPlanes_Draw() {
+  refreshRotation();
   gfx->fillScreen(C_BLACK);
   float range = currentRange();
   const double clat = Settings_Lat(), clon = Settings_Lon();
@@ -325,6 +421,7 @@ void ScreenPlanes_Draw() {
   gfx->drawCircle(MAP_CX, MAP_CY, R_RADIUS / 2, C_DKGRAY);
   gfx->drawFastHLine(MAP_CX - 8, MAP_CY, 16, C_WHITE);
   gfx->drawFastVLine(MAP_CX, MAP_CY - 8, 16, C_WHITE);
+  drawCompassMarks();
 
   // --- Nejblizsi letadlo (fallback pro detail, kdyz nic neni vybrano) ---
   int nearestIdx = -1;
@@ -332,22 +429,19 @@ void ScreenPlanes_Draw() {
   const Aircraft* list = ADSB_List();
   int n = ADSB_Count();
   for (int i = 0; i < n; i++) {
-    if (list[i].onGround) continue;
     if (list[i].lat == 0 && list[i].lon == 0) continue;
     float d = distKm(list[i].lat, list[i].lon, clat, clon);
     if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
   }
 
   // Letadlo do detailu: rucne vybrane (dle ICAO), jinak automaticky nejblizsi.
-  int selIdx = findIdxByIcao(s_selIcao);
-  if (s_selIcao[0] && selIdx < 0) s_selIcao[0] = '\0';   // vybrane zmizelo -> auto
-  int detailIdx = (selIdx >= 0) ? selIdx : nearestIdx;
+  int selIdx = (s_selIcao[0]) ? ADSB_FindByIcao(s_selIcao) : -1;
+  int detailIdx = (selIdx >= 0) ? selIdx : ((s_selIcao[0] && s_selCacheOk) ? -1 : nearestIdx);
 
   // --- Vykresleni letadel (jen v mapovem okne) ---
   int shown = 0;
   s_planeN = 0;                        // znovu naplnime pozice pro tap-to-select
   for (int i = 0; i < n; i++) {
-    if (list[i].onGround) continue;
     if (list[i].lat == 0 && list[i].lon == 0) continue;
     int sx, sy;
     project(list[i].lat, list[i].lon, clat, clon, range, &sx, &sy);
@@ -357,8 +451,8 @@ void ScreenPlanes_Draw() {
     // Ulozit pozici + ICAO pro dotykovy vyber.
     if (s_planeN < ADSB_MAX) {
       s_planeX[s_planeN] = sx; s_planeY[s_planeN] = sy;
-      strncpy(s_planeIcao[s_planeN], list[i].icao, 6);
-      s_planeIcao[s_planeN][6] = '\0';
+      strncpy(s_planeIcao[s_planeN], list[i].icao, sizeof(s_planeIcao[0]) - 1);
+      s_planeIcao[s_planeN][sizeof(s_planeIcao[0]) - 1] = '\0';
       s_planeN++;
     }
 
@@ -366,7 +460,9 @@ void ScreenPlanes_Draw() {
       gfx->drawCircle(sx, sy, 15, C_WHITE);
       gfx->drawCircle(sx, sy, 17, C_WHITE);
     }
-    drawPlane(sx, sy, list[i].track, list[i].hasTrack, altColor(list[i].altFt));
+    // Kurz se opravuje o otoceni mapy - ikona pak miri tam, kam letadlo leti.
+    float trackOnScreen = list[i].track - (float)s_topDeg;
+    drawPlane(sx, sy, trackOnScreen, list[i].hasTrack, altColor(list[i].altFt));
     if (list[i].callsign[0]) {
       int len = strlen(list[i].callsign);
       int tw = len * 6;               // font size 1
@@ -408,7 +504,17 @@ void ScreenPlanes_Draw() {
   }
 
   // --- Detailovy panel vpravo (prekryje pripadny presah podkresu) ---
-  float detailDist = (detailIdx >= 0)
-      ? distKm(list[detailIdx].lat, list[detailIdx].lon, clat, clon) : 0.0f;
-  drawPanel(detailIdx, detailDist, selIdx >= 0);
+  const Aircraft* det = nullptr;
+  float detailDist = 0.0f;
+  bool  stale = false;
+  if (detailIdx >= 0) {
+    det = &list[detailIdx];
+  } else if (s_selIcao[0] && s_selCacheOk) {
+    // Grace perioda: letadlo v poslednim stazeni chybelo, ukazeme posledni
+    // zname hodnoty misto toho, aby detail uskocil jinam.
+    det = &s_selCache;
+    stale = true;
+  }
+  if (det) detailDist = distKm(det->lat, det->lon, clat, clon);
+  drawPanel(det, detailDist, s_selIcao[0] != '\0', stale);
 }

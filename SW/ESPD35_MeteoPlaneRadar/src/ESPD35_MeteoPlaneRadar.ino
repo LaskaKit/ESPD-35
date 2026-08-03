@@ -1,22 +1,31 @@
 // =============================================================================
-//  ESPD35_MeteoPlaneRadar - radar letadel (adsb.fi) na LaskaKit ESPD-3.5"
+//  ESPD35_MeteoPlaneRadar - radar letadel (adsb.fi) + meteoradar CHMU
+//  na desce LaskaKit ESPD-3.5"
 // =============================================================================
 //
-//  Deska:   LaskaKit ESPD-3.5" (ESP32-S3), displej ILI9488 480x320 (SPI)
+//  Deska:   LaskaKit ESPD-3.5" (ESP32-S3, 16 MB flash), ILI9488 480x320 (SPI),
+//           kapacitni dotyk FT5436 (I2C, knihovna FT6236)
 //
-//  Dve obrazovky, prepinaji se dlouhym stiskem prstu (kdekoli na displeji):
-//    1) LETADLA  - 3/4 mapa vlevo + 1/4 detail nejblizsiho letadla vpravo
-//    2) METEO    - celoobrazovkovy srazkovy radar CHMU (Web Mercator vyrez)
+//  Tri obrazovky (dokola):
+//    1) LETADLA  - 3/4 mapa vlevo + 1/4 detail letadla vpravo
+//    2) METEO    - celoobrazovkovy srazkovy radar CHMU s animaci
+//    3) NASTAVENI- jas, orientace mapy, jednotky, WiFi + poloha, aktualizace FW
 //
-//  Ovladani:
-//    - dlouhy stisk prstu (>0,5 s) = prepnout LETADLA <-> METEO
-//    - swipe vlevo/vpravo (dotyk)= zmena rozsahu aktivni obrazovky
-//    - klepnuti na letadlo       = detail; klepnuti do prazdna = auto-nejblizsi
-//    - kratky stisk tlacitka     = zmena rozsahu (aktivni obrazovka)
-//    - dlouhy stisk tlacitka     = prepnuti jednotek (jen na obrazovce letadel)
-//    - drzeni tlacitka WiFi = prepnuti do nastaveni (spusteni AP)
+//  Ovladani je CELE dotykove - ESPD-3.5 nema zadne uzivatelske tlacitko:
+//    - swipe vlevo/vpravo        = zmena rozsahu aktivni obrazovky
+//    - kratke klepnuti na letadlo= zafixovat v detailu; do prazdna = zpet
+//    - dlouhy stisk v LEVE pulce = predchozi obrazovka
+//    - dlouhy stisk v PRAVE pulce= nasledujici obrazovka
+//    - klepnuti na tecky dole    = skok primo na danou obrazovku
+//    - tovarni reset             = tlacitko na obrazovce Nastaveni (2 klepnuti)
 //
-//  Port projektu petus/Meteo-PlaneRadar (kulaty displej Waveshare 480x480).
+//  ORIENTACE MAPY (Nastaveni -> "Nahore"): nastavuje se smer, kterym se divate
+//  z okna. Letadla na displeji jsou pak ve stejnem smeru jako ta za sklem.
+//  Otaci se PROJEKCE, ne displej, takze se spravne otoci i obrys, mesta a ikony
+//  letadel a dotykove souradnice zustavaji platne. Meteoradar se zamerne
+//  neotaci - srazkova mapa se cte severem nahoru.
+//
+//  Port projektu petus/MeteoPlaneRadar (kulaty displej Waveshare 480x480).
 //  Zachovana izotropni projekce -> spravne meritko a shoda dat s mesty
 //  (letadla plocha azimutalni projekce, meteo Web Mercator).
 //
@@ -24,8 +33,13 @@
 //    - GFX Library for Arduino (moononournation)  - kresleni + canvas
 //    - PNGdec (bitbank2)                          - dekodovani snimku CHMU
 //    - ArduinoJson (bblanchon, v7)                - parsovani ADS-B dat
-//    - WiFiManager (tzapu)                         - konfiguracni WiFi portal
-//    - QRCode (ricmoo)                             - QR kod v AP portalu
+//    - WiFiManager (tzapu)                        - konfiguracni WiFi portal
+//    - ElegantOTA (ayushsharma82)                 - aktualizace pres WiFi
+//    - QRCode (ricmoo)                            - QR kod v AP portalu
+//    - FT6236 (prilozena LaskaKit)                - kapacitni dotyk
+//
+//  POZOR: pro OTA je nutna vlastni tabulka oddilu (src/partitions.csv, dva
+//  aplikacni sloty po 6 MB) - v Arduino IDE zvolte Partition Scheme = Custom.
 //
 //  Zdroje dat (nutno uvest, jen pro osobni nekomercni pouziti):
 //    - Letadla: adsb.fi, https://adsb.fi
@@ -33,7 +47,9 @@
 //    - Poloha:  ip-api.com (automaticka detekce dle IP)
 //
 //  Licence: MIT. Na displeji se zobrazuje napis "laskakit.cz".
-//  Puvodni projekt petus/Meteo-PlaneRadar vznikl pro chiptron.cz (atribuce).
+//  Puvodni projekt petus/MeteoPlaneRadar vznikl pro chiptron.cz (atribuce).
+//
+//  Verze: src/Version.h (FW_VERSION).  Historie zmen: CHANGELOG.md.
 // =============================================================================
 
 #include <Arduino_GFX_Library.h>
@@ -41,6 +57,7 @@
 #include "esp_arduino_version.h"
 
 #include "Config.h"
+#include "Version.h"
 #include "UI.h"
 #include "Settings.h"
 #include "WiFiPortal.h"
@@ -49,6 +66,8 @@
 #include "ScreenPlanes.h"
 #include "CHMU.h"
 #include "ScreenWeather.h"
+#include "ScreenSettings.h"
+#include "OTA.h"
 #include "Watchdog.h"
 #if TOUCH_ENABLE
   #include "Touch_FT6236.h"
@@ -67,8 +86,10 @@ static void netPoll() { yield(); Watchdog_Feed(); }
 
 // ---------------------------------------------------------------------------
 //  Podsviceni (PWM), kompatibilni s core 2.x i 3.x.
+//  Neni static - vola ho i obrazovka Nastaveni (posuvnik jasu). Deklarace
+//  je v UI.h.
 // ---------------------------------------------------------------------------
-static void Backlight_Set(uint8_t pct) {
+void Backlight_Set(uint8_t pct) {
   if (TFT_BL < 0) return;
   uint32_t duty = (uint32_t)pct * 255 / 100;
 #if ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0)
@@ -82,52 +103,125 @@ static void Backlight_Set(uint8_t pct) {
 }
 
 // ---------------------------------------------------------------------------
-//  Tlacitko: kratky vs. dlouhy stisk.
+//  Sprava obrazovek
 // ---------------------------------------------------------------------------
-static bool buttonDown() {
-  int v = digitalRead(BUTTON_PIN);
-  return BUTTON_ACTIVE_LOW ? (v == LOW) : (v == HIGH);
-}
-
+enum { SCREEN_PLANES = 0, SCREEN_METEO = 1, SCREEN_SETTINGS = 2, SCREEN_COUNT = 3 };
+static int  s_screen = SCREEN_PLANES;
 static bool s_forceDraw = false;
 
-// --- Spravce obrazovek: 0 = letadla, 1 = meteoradar ---
-enum { SCREEN_PLANES = 0, SCREEN_METEO = 1 };
-static int s_screen = SCREEN_PLANES;
+// --- Tecky prepinani obrazovek (dole uprostred) ---
+//
+// Krome dlouheho stisku jde na obrazovku skocit i primo klepnutim na tecku.
+// Dlouhy stisk je rychly, ale neni videt - tecky ukazuji, kde uzivatel je,
+// a zaroven slouzi jako tlacitka. Zona je na vsech obrazovkach volna:
+// ScreenPlanes ji ma v inReservedZone(), meteoradar i Nastaveni tam nic nemaji.
+#define DOTS_CY      308
+#define DOTS_GAP      24
+#define DOTS_R         6
+#define DOTS_CX       (LCD_WIDTH / 2)
+#define DOTS_HIT_HALF (DOTS_GAP * SCREEN_COUNT / 2)   // 36 px na kazdou stranu
+#define DOTS_HIT_Y0   (DOTS_CY - 14)
+#define DOTS_HIT_Y1   (DOTS_CY + 12)
 
-// Smerovani na aktivni obrazovku.
-static void activeChangeRange(int dir) {
-  if (s_screen == SCREEN_PLANES) ScreenPlanes_ChangeRange(dir);
-  else                           ScreenWeather_ChangeRange(dir);
-}
-static bool activeTick() {
-  return (s_screen == SCREEN_PLANES) ? ScreenPlanes_Tick() : ScreenWeather_Tick();
-}
-static void activeEnter() {
-  if (s_screen == SCREEN_PLANES) ScreenPlanes_Enter();
-  else                           ScreenWeather_Enter();
-}
-
-static void handleButton() {
-  static bool prev = false;
-  static unsigned long tDown = 0;
-  bool down = buttonDown();
-  if (down && !prev) { prev = true; tDown = millis(); }
-  else if (!down && prev) {
-    prev = false;
-    unsigned long dur = millis() - tDown;
-    if (dur >= 40 && dur < 800) {           // kratky stisk -> rozsah (aktivni obrazovka)
-      activeChangeRange(+1);
-      s_forceDraw = true;
-    } else if (dur >= 800) {                 // dlouhy stisk -> jednotky (jen letadla)
-      if (s_screen == SCREEN_PLANES) ScreenPlanes_ToggleUnits();
-      s_forceDraw = true;
-    }
+static void drawScreenDots() {
+  int startX = DOTS_CX - (SCREEN_COUNT - 1) * DOTS_GAP / 2;
+  // Podklad, aby byly tecky citelne i nad mapou nebo srazkami.
+  gfx->fillRoundRect(DOTS_CX - DOTS_HIT_HALF, DOTS_HIT_Y0,
+                     DOTS_HIT_HALF * 2, DOTS_HIT_Y1 - DOTS_HIT_Y0, 6, C_BLACK);
+  for (int i = 0; i < SCREEN_COUNT; i++) {
+    int x = startX + i * DOTS_GAP;
+    if (i == s_screen) gfx->fillCircle(x, DOTS_CY, DOTS_R, C_WHITE);
+    else               gfx->drawCircle(x, DOTS_CY, DOTS_R, C_GRAY);
   }
 }
 
+// Vraci index obrazovky, na kterou se klepnulo, jinak -1.
+static int dotsHitTest(int x, int y) {
+  if (y < DOTS_HIT_Y0 || y > DOTS_HIT_Y1) return -1;
+  if (x < DOTS_CX - DOTS_HIT_HALF || x > DOTS_CX + DOTS_HIT_HALF) return -1;
+  int startX = DOTS_CX - (SCREEN_COUNT - 1) * DOTS_GAP / 2;
+  int best = -1, bestD = DOTS_GAP / 2 + 2;
+  for (int i = 0; i < SCREEN_COUNT; i++) {
+    int d = abs(x - (startX + i * DOTS_GAP));
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
+
+static void drawActive() {
+  switch (s_screen) {
+    case SCREEN_PLANES:   ScreenPlanes_Draw();   break;
+    case SCREEN_METEO:    ScreenWeather_Draw();  break;
+    case SCREEN_SETTINGS: ScreenSettings_Draw(); break;
+  }
+  drawScreenDots();
+  gfx->flush();
+}
+
+static void activeEnter() {
+  switch (s_screen) {
+    case SCREEN_PLANES:   ScreenPlanes_Enter();   break;
+    case SCREEN_METEO:    ScreenWeather_Enter();  break;
+    case SCREEN_SETTINGS: ScreenSettings_Enter(); break;
+  }
+}
+
+static bool activeTick() {
+  switch (s_screen) {
+    case SCREEN_PLANES:   return ScreenPlanes_Tick();
+    case SCREEN_METEO:    return ScreenWeather_Tick();
+    case SCREEN_SETTINGS: return ScreenSettings_Tick();
+  }
+  return false;
+}
+
+static void activeChangeRange(int dir) {
+  switch (s_screen) {
+    case SCREEN_PLANES: ScreenPlanes_ChangeRange(dir);  break;
+    case SCREEN_METEO:  ScreenWeather_ChangeRange(dir); break;
+    default: break;   // Nastaveni zadny rozsah nema
+  }
+}
+
+static bool activeTap(int x, int y) {
+  switch (s_screen) {
+    case SCREEN_PLANES:   return ScreenPlanes_HandleTap(x, y);
+    case SCREEN_SETTINGS: return ScreenSettings_HandleTap(x, y);
+    default: return false;   // meteoradar nema dotykove cile
+  }
+}
+
+static void gotoScreen(int idx) {
+  if (idx < 0 || idx >= SCREEN_COUNT || idx == s_screen) return;
+  s_screen = idx;
+  Settings_SetScreen((uint8_t)s_screen);   // zapamatovat (zapis je odlozeny)
+  Serial.printf("Obrazovka: %d\n", s_screen);
+  activeEnter();
+  s_forceDraw = true;
+}
+
+// Dlouhy stisk prepina smerove: dir -1 = predchozi, +1 = nasledujici, dokola.
+static void switchScreen(int dir) {
+  gotoScreen((s_screen + dir + SCREEN_COUNT) % SCREEN_COUNT);
+}
+
+// Tovarni reset. ESPD-3.5 nema tlacitko, ktere by slo drzet pri startu, takze
+// se vyvolava z obrazovky Nastaveni (a ta si vyzada potvrzeni druhym klepnutim).
+static void doFactoryReset() {
+  gfx->fillScreen(C_BLACK);
+  UI_TextCentered("Mazu nastaveni", LCD_HEIGHT / 2 - 10, C_RED, 2);
+  UI_TextCentered("Deska se restartuje...", LCD_HEIGHT / 2 + 20, C_GRAY, 1);
+  gfx->flush();
+  Settings_ClearAll();
+  WiFi_Reset();
+  delay(1200);
+  ESP.restart();
+}
+
 #if TOUCH_ENABLE
-// Dotyk: rozliseni gest - vodorovny swipe (zmena rozsahu) vs. tap (vyber).
+// ---------------------------------------------------------------------------
+//  Dotyk: swipe (rozsah) vs. kratke klepnuti (vyber) vs. dlouhy stisk (obrazovka)
+// ---------------------------------------------------------------------------
 static void handleTouch() {
   static bool touching = false;
   static int  sx = 0, sy = 0, lx = 0, ly = 0;
@@ -138,71 +232,67 @@ static void handleTouch() {
   if (down) {
     if (!touching) { touching = true; sx = x; sy = y; t0 = millis(); }
     lx = x; ly = y;
-  } else if (touching) {
-    touching = false;
-    int dx = lx - sx, dy = ly - sy;
-    unsigned long dur = millis() - t0;
-    if (abs(dx) >= 60 && abs(dy) <= 50 && dur <= 700) {
-      // Swipe = zmena rozsahu na aktivni obrazovce.
-      activeChangeRange(dx < 0 ? +1 : -1);
-      s_forceDraw = true;
-    } else if (abs(dx) < 30 && abs(dy) < 30) {   // stisk na jednom miste
-      if (dur >= 500) {                          // DLOUHY stisk kdekoli -> prepnout obrazovku
-        s_screen = (s_screen == SCREEN_PLANES) ? SCREEN_METEO : SCREEN_PLANES;
-        activeEnter();
-        s_forceDraw = true;
-      } else if (s_screen == SCREEN_PLANES) {    // kratky tap -> vyber letadla / tlacitka
-        if (ScreenPlanes_HandleTap(lx, ly)) s_forceDraw = true;
-      }
-    }
+    return;
   }
-}
+  if (!touching) return;
+
+  touching = false;
+  int dx = lx - sx, dy = ly - sy;
+  unsigned long dur = millis() - t0;
+  bool smallMove = (abs(dx) < 30 && abs(dy) < 30);
+  bool swipe     = (abs(dx) >= 60 && abs(dy) <= 50 && dur <= 700);
+
+#if TOUCH_DEBUG
+  Serial.printf("TOUCH: start=(%d,%d) konec=(%d,%d) dx=%d dy=%d %lums -> %s\n",
+                sx, sy, lx, ly, dx, dy, (unsigned long)dur,
+                swipe ? "swipe" : (smallMove && dur >= 500) ? "dlouhy stisk"
+                      : smallMove ? "klepnuti" : "ignorovano");
 #endif
 
-// Drzeni tlacitka pri startu -> reset nastaveni.
-static void checkBootReset() {
-  if (!buttonDown()) return;
-  gfx->fillScreen(C_BLACK);
-  UI_TextCentered("Drzte pro reset...", LCD_HEIGHT / 2, C_WHITE, 2);
-  gfx->flush();
-  unsigned long start = millis();
-  while (buttonDown()) {
-    if (millis() - start >= 3000) {
-      UI_TextCentered("Mazu nastaveni", LCD_HEIGHT / 2 + 30, C_RED, 2);
-      gfx->flush();
-      Settings_ClearAll();
-      WiFi_Reset();
-      delay(800);
-      ESP.restart();
-    }
-    delay(20);
+  if (swipe) {
+    activeChangeRange(dx < 0 ? +1 : -1);
+    s_forceDraw = true;
+    return;
   }
-}
+  if (!smallMove) return;
 
-static void drawActive() {
-  if (s_screen == SCREEN_PLANES) ScreenPlanes_Draw();
-  else                           ScreenWeather_Draw();
-  gfx->flush();
+  // Tecky prepinani obrazovek maji prednost pred vsim ostatnim - jsou to
+  // jedine "globalni" tlacitko a jejich zona je na vsech obrazovkach volna.
+  int dot = dotsHitTest(lx, ly);
+  if (dot >= 0) { gotoScreen(dot); return; }
+
+  if (dur >= 500) {
+    // DLOUHY stisk. Na obrazovce Nastaveni ale nesmi "prestrelit" tlacitko:
+    // kdo drzi prst na "Firmware update" pomaleji nez pul sekundy, chce to
+    // tlacitko, ne jinou obrazovku.
+    if (s_screen == SCREEN_SETTINGS && ScreenSettings_HitsControl(lx, ly)) {
+      if (activeTap(lx, ly)) s_forceDraw = true;
+      return;
+    }
+    switchScreen(lx < LCD_WIDTH / 2 ? -1 : +1);
+    return;
+  }
+
+  // KRATKE klepnuti -> obrazovka si ho zpracuje sama.
+  if (activeTap(lx, ly)) s_forceDraw = true;
 }
+#endif
 
 void setup() {
   Serial.begin(115200);
   delay(300);
-  Serial.println("\n=== ESPD35 PlaneRadar ===");
+  Serial.printf("\n=== ESPD35_MeteoPlaneRadar v%s ===\n", FW_VERSION);
 
   Settings_Begin();
-
-  pinMode(BUTTON_PIN, BUTTON_ACTIVE_LOW ? INPUT_PULLUP : INPUT_PULLDOWN);
 
   // Displej + canvas.
   if (!gfx->begin(TFT_SPI_HZ)) {
     Serial.println("gfx->begin() SELHAL - zkontrolujte piny a OPI PSRAM");
   }
+  gfx->setTextWrap(false);
   Backlight_Set(Settings_Backlight());
   gfx->fillScreen(C_BLACK);
   gfx->flush();
-
-  checkBootReset();
 
 #if TOUCH_ENABLE
   Touch_Init();
@@ -214,31 +304,49 @@ void setup() {
   WiFi_ConnectOrPortal();
   if (WiFi_IsConnected()) {
     Serial.printf("WiFi: %s  IP: %s\n", WiFi_SSID().c_str(), WiFi_IP().c_str());
-    configTzTime(TZ_INFO, "pool.ntp.org");
+    configTzTime(TZ_INFO, NTP_SERVER);
     GeoIP_DetectIfNeeded();   // doplni polohu dle IP, kdyz ji uzivatel nezadal
   }
 
-  s_screen = SCREEN_PLANES;
+  // Obnovit posledni obrazovku (Enter() si obnovi i rozsah).
+  s_screen = Settings_Screen();
+  if (s_screen >= SCREEN_COUNT) s_screen = SCREEN_PLANES;
   activeEnter();
   drawActive();
 
   Watchdog_Begin();
+  Serial.println("Setup hotov");
 }
 
 void loop() {
-  handleButton();
 #if TOUCH_ENABLE
   handleTouch();
 #endif
   WiFi_Loop();
 
-  // Zadost o WiFi/AP portal z tlacitka v panelu (blokujici - kresli AP obrazovku).
-  if (ScreenPlanes_WantsPortal()) {
-    ScreenPlanes_ClearPortal();
-    Watchdog_Suspend();
+  // Tovarni reset z obrazovky Nastaveni (uz potvrzeny druhym klepnutim).
+  // Konci restartem, takze se za nej nedostaneme.
+  if (ScreenSettings_WantsReset()) {
+    ScreenSettings_ClearReset();
+    doFactoryReset();
+  }
+
+  // Zadost o WiFi/AP portal z obrazovky Nastaveni (blokujici).
+  if (ScreenSettings_WantsPortal()) {
+    ScreenSettings_ClearPortal();
+    Watchdog_Suspend();                 // portal blokuje - watchdog nema kdo krmit
     WiFi_StartPortal();                 // umozni zadat WiFi i polohu (lat/lon)
     Watchdog_Resume();
-    if (WiFi_IsConnected()) configTzTime(TZ_INFO, "pool.ntp.org");
+    if (WiFi_IsConnected()) configTzTime(TZ_INFO, NTP_SERVER);
+    activeEnter();
+    drawActive();
+  }
+
+  // Aktualizace firmwaru pres WiFi. OTA_Run() je blokujici a konci restartem,
+  // takze se za nej za normalnich okolnosti nedostaneme.
+  if (ScreenSettings_WantsOTA()) {
+    ScreenSettings_ClearOTA();
+    OTA_Run();
     activeEnter();
     drawActive();
   }
@@ -252,6 +360,7 @@ void loop() {
     s_forceDraw = false;
   }
 
+  Settings_Tick();   // odlozeny zapis stavu UI do NVS
   Watchdog_Feed();
   delay(5);
 }

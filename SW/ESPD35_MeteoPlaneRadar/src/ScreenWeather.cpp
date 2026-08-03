@@ -21,11 +21,15 @@
 
 #define ANIM_FRAMES  CHMU_ANIM_MAX   // 6
 
-// Rozsahy meteoradaru (polomer na VYSKU v km).
-static const float RANGES_KM[] = {25.0f, 50.0f, 100.0f, 200.0f};
+// Rozsahy meteoradaru (polomer na VYSKU v km) - z Config.h.
+static const float RANGES_KM[] = METEO_RANGES_KM;
 static const int   RANGE_COUNT = sizeof(RANGES_KM) / sizeof(RANGES_KM[0]);
 static int s_rangeIdx = 1;
 static float currentRange() { return RANGES_KM[s_rangeIdx]; }
+
+// POZNAMKA: meteoradar se zamerne NEOTACI podle nastaveni "Nahore". Srazkova
+// mapa se cte severem nahoru a orientaci v ni drzi obrys CR. Otoceni plati jen
+// pro radar letadel, ktery je "pohled z mista, kde stojim".
 
 static PNG png;
 static int s_imgW = 600, s_imgH = 480;
@@ -228,6 +232,11 @@ static void drawOverlay() {
 }
 
 void ScreenWeather_Enter() {
+  // Rozsah meteoradaru se pamatuje ZVLAST od rozsahu letadel - jsou to jine
+  // veliciny (25-200 km vs. 10-100 km) a uzivatel je nastavuje nezavisle.
+  int idx = Settings_MeteoRange();
+  if (idx >= RANGE_COUNT) idx = 1;
+  if (idx != s_rangeIdx) { s_rangeIdx = idx; s_needRebuild = true; }
   s_lastStep = millis();
   s_gap = false;
   s_curFrame = 0;
@@ -235,6 +244,7 @@ void ScreenWeather_Enter() {
 
 void ScreenWeather_ChangeRange(int dir) {
   s_rangeIdx = (s_rangeIdx + dir + RANGE_COUNT) % RANGE_COUNT;
+  Settings_SetMeteoRange(s_rangeIdx);   // zapis do NVS je odlozeny
   s_needRebuild = true;   // ramce znovu orezat pri dalsim ticku
 }
 
