@@ -165,7 +165,7 @@ Smaže uložené WiFi údaje i nastavení (poloha, jas, jednotky, orientace, roz
 a desku restartuje — pak se zase přihlásí konfiguračním portálem.
 
 > Kdyby dotyk vůbec nefungoval, reset touhle cestou nejde. Záchranou je nahrání
-> `*.merged.bin` přes USB, které přepíše i NVS.
+> `*.USB.merged.bin` přes USB, které přepíše i NVS.
 
 ### Orientace mapy („Nahoře")
 
@@ -185,7 +185,7 @@ Od verze 0.3.0 jde nový firmware nahrát bezdrátově.
 1. V zařízení jdi do **Nastavení** a klepni na **Firmware update (OTA)**.
 2. Zařízení vytvoří WiFi síť `ESPD35-MeteoPlaneRadar` (bez hesla) a ukáže QR kód.
 3. V prohlížeči otevři **`http://192.168.4.1/update`** a nahraj soubor
-   `ESPD35_MeteoPlaneRadar.ino.bin` — **ten bez `merged`**.
+   `ESPD35_MeteoPlaneRadar_vX.OTA.bin` — **ten bez `merged`**.
 4. Průběh je vidět na displeji i v prohlížeči; deska se sama restartuje.
 
 Telefon nahlásí, že síť nemá internet — to nevadí, soubor už máš stažený.
@@ -193,7 +193,7 @@ Když se aktualizace nepovede, zůstane v desce původní verze.
 
 > ### ⚠️ Přechod z verze 0.2 a nižší
 > Verze 0.3.0 mění rozdělení paměti. Poprvé je proto nutné nahrát
-> `*.merged.bin` **přes USB** — bezdrátová aktualizace by neměla kam zapsat.
+> `*.USB.merged.bin` **přes USB** — bezdrátová aktualizace by neměla kam zapsat.
 > Stačí to jednou.
 
 ---
