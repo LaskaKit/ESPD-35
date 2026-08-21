@@ -49,10 +49,11 @@ Nepotřebuješ Arduino IDE ani nic instalovat. Stačí prohlížeč.
 **Potřebuješ:** Chrome nebo Edge (Firefox a Safari to neumí) a USB‑C kabel,
 který vede i data — ne jen nabíjecí.
 
-1. Otevři **webový flasher** (odkaz na stránce projektu).
+1. Otevři **[webový flasher](http://esp32flasher.chiptron.cz/)**.
 2. Připoj desku do počítače kabelem ke konektoru označenému **„USB"**.
-3. Klikni na **Connect** a v seznamu vyber port desky.
-4. Klikni na **Install** a počkej. Deska se sama restartuje.
+3. Vyber soubor `ESPD35_MeteoPlaneRadar_vX_USB.ino.merged.bin`
+4. Klikni na **Connect** a v seznamu vyber port desky.
+5. Klikni na **Install** a počkej. Deska se sama restartuje.
 
 ### První spuštění
 
@@ -100,7 +101,7 @@ nahoru.
 
 ### Aktualizace firmwaru
 
-Ve **Správě** vyber soubor `ESPD35_MeteoPlaneRadar.ino.bin` (ten **bez**
+Ve **Správě** vyber soubor `ESPD35_MeteoPlaneRadar_vX_OTA.ino.bin` (ten **bez**
 „merged") a klikni na Nahrát. Průběh je vidět v prohlížeči i na displeji.
 Když se to nepovede, zůstane v desce původní verze.
 
