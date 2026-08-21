@@ -1,12 +1,108 @@
 # Changelog
 
-Všechny podstatné změny v projektu **ESPD35_MeteoPlaneRadar**.
-Formát vychází z [Keep a Changelog](https://keepachangelog.com/cs/1.1.0/),
-verzování je [semantické](https://semver.org/lang/cs/).
+Změny v projektu **ESPD35_MeteoPlaneRadar**.
+Verze je na jediném místě: `Version.h` (`FW_VERSION`).
 
-Verze je na jediném místě: `src/Version.h` (`FW_VERSION`). Zobrazuje se na
-obrazovce Nastavení, na OTA obrazovce a v sériovém výpisu při startu.
-Laditelné konstanty jsou pohromadě v `src/Config.h`.
+---
+
+## [0.4.0]
+
+Konfigurace se přesunula do prohlížeče, přibyly hodiny a předpověď.
+
+> **Aktualizace z 0.3.0:** rozdělení paměti se nemění, jde přes OTA.
+> Poslední zobrazená obrazovka se převede automaticky (nový klíč `scr2`).
+
+### Přidáno
+
+- **Obrazovka hodin** — čas, datum, počasí, vítr, východ a západ slunce.
+  Ukazatel sekund běží po elipse; čtyři styly (vypnuto / tečky / čára /
+  kometa), barvy se nastavují na webu. Klepnutí přepne den/noc, když je
+  automatika vypnutá.
+- **Obrazovka předpovědi** — 6 hodin, 3 dny, ovzduší (AQI, PM2.5, pyl).
+- **Webová konfigurace** na `http://espd35meteoradar.local/`, v záložkách.
+  Poloha (i vyhledáním města), jas, obrazovky, jednotky, orientace mapy,
+  filtry letadel, WiFi, záloha a obnova, aktualizace firmwaru.
+  Stránka je jeden soubor bez externích závislostí — funguje i z přístupového
+  bodu, kde deska nemá internet.
+- **Stav zdrojů dat** na webu: čas, adresa, signál, doba běhu, volná paměť
+  a jednořádkové hlášení ADS‑B, meteoradaru a předpovědi. Plus přepínání
+  obrazovek a rozsahu na dálku.
+- **Automatický noční jas** podle východu a západu slunce, s posunem ±120 min.
+- **Evropská mapa** (30 894 bodů hranic, 1 100 měst) místo obrysu ČR.
+- **Pátý rozsah meteoradaru: celá ČR** — pevný výřez státu bez ohledu na polohu.
+- **Trasa letu** (adsbdb.com) v detailu letadla: odkud, kam, registrace.
+- **Nouzový squawk** (7500/7600/7700) — červený pruh v detailu. Letadlo v nouzi
+  se zobrazí i mimo nastavené výškové pásmo.
+- **Pět obrazovek, čtyři vypínatelné**, plus automatické střídání.
+  Vypnutá obrazovka nemá tečku a přeskočí ji dlouhý stisk i střídání.
+- **Filtry letadel**: výškové pásmo, jen se znakem volání, hlídaný volací znak.
+- **Heslo správce** — chrání aktualizaci firmwaru, obnovu ze zálohy a reset.
+
+### Změněno
+
+- **Pryč ElegantOTA.** Je pod AGPL‑3.0 a u zařízení s webovou stránkou se
+  licence uplatní. Nahradila ho třída `Update` z ESP32 core, kterou ElegantOTA
+  stejně jen obalovala — o jednu závislost míň.
+- **Pryč WiFiManager.** Blokoval smyčku (kvůli tomu se musel uspávat watchdog)
+  a jeho portál je anglický. Náhradou je vlastní přístupový bod a stránka
+  projektu. **Přístupový bod nemá časový limit.**
+- **Žádná změna nastavení nevyžaduje restart.** Restart zůstal jako tlačítko
+  ve Správě a u obnovy ze zálohy.
+- **`Net.*`** — jedno místo pro HTTPS. Kontroluje volnou interní paměť, protože
+  TLS handshake potřebuje ~45 kB; bez toho selže jako nic neříkající `HTTP -1`.
+- **Dotyk se neztrácí během stahování.** Snímání běží i uvnitř přenosu,
+  provedení až v `loop()`.
+- **Obrazovka Nastavení**: místo dvou tlačítek je tam „Znovu nastavit WiFi“
+  a adresa webu.
+- **`Watchdog_Suspend()` / `Resume()` zrušeny** — nic už smyčku neblokuje.
+
+### Opraveno
+
+- **Jednotky u předpovědi a hodnoty ovzduší se nekreslily.** Hodnota a jednotka
+  si o místo říkaly zvlášť a druhý nárok Layout vždy odmítl, protože obdélníky
+  se překrývaly. Skupina teď zabírá jeden obdélník.
+- **Tlačítko „Uložit nastavení“ bylo jen v záložce Správa** — schovalo se
+  s ní, takže změny z ostatních záložek nešlo uložit. Teď je pod všemi.
+- **Východ a západ slunce nešly přečíst** (tmavá šedá, velikost 1) → světlá
+  šedá, velikost 2.
+- **Ikony počasí splývaly s pozadím**, nejvíc u deště a bouřky. Přibyla světlejší
+  šedá pro mraky.
+- **Běh sekund nebyl v krabičce vidět** — vedl po samém okraji. Teď je to
+  elipsa s odsazením 16 px.
+- **Ohon komety byl příliš krátký** (5 s) → 20 s, plynulé hasnutí.
+- **Detail letadla zůstával na stroji mimo mapu** → vrátí se na nejbližší,
+  jakmile je vybrané letadlo dál než zobrazený rozsah.
+- **Detail letadla byl celý drobný** → hodnota velikosti 2, popisek a jednotka
+  malé. Když se to nevejde, hodnota se zmenší, místo aby přetekla.
+- **Modrý obdélník u předpovědi na dny** (sloupeček srážek bez měřítka) zrušen.
+- **Druh pylu byl na místě jednotky** → je v popisku (`Pyl travy`), číslo velké.
+  Jednotka se u pylu neuvádí: bez tabulky prahů stejně nic neřekne.
+- **PM2.5 mělo jednotku `ug`** — nedokončenou. Správně `ug/m3`.
+- **Srážky u předpovědi na hodiny se nekreslily.** Řádek zabírá 20 px, ale
+  oddělovací čára pod hodinovým pásem stála 16 px pod ním, takže nárok
+  kolidoval a Layout ho odmítl. Svislé rozestupy jsou přepočítané a hlídá
+  je test, který konstanty čte přímo ze zdrojáku.
+- **Automatické střídání obrazovek se nerozjelo.** Dvě příčiny:
+  z obrazovky Nastavení se záměrně nikdy neodcházelo, takže deska nechaná
+  na Nastavení se sama nevrátila k datům; a pauza po doteku byla pevných
+  10 minut bez ohledu na interval — po jediném doteku se u desetisekundového
+  střídání deset minut nedělo nic. Nově se z Nastavení odchází taky (uživatele
+  chrání pauza) a pauza je desetinásobek intervalu, nejméně 30 s a nejvýše
+  10 minut. Nově uložená hodnota navíc platí okamžitě, nečeká se na doběhnutí
+  staré pauzy. V záložce Stav je vidět, jestli je střídání vypnuté, nebo jen
+  pozastavené a na jak dlouho.
+- **Teploty měly barvu podle počasí, ne podle teploty** — 18 °C mohlo být
+  červené a 22 °C modré. Barva teď znamená teplotu (modrá → červená),
+  stav počasí nese ikona nad číslem. Platí i pro denní maxima a minima.
+- **Posuvník jasu neříkal, kterou úroveň nastavuje** → `Jas (den, automaticky)`.
+- **Vítr byl schovaný pod teplotou** → pod hodinami, velikost 2.
+- **Tečky obrazovek byly moc velké** (poloměr 6 → 4).
+- **Podpis „laskakit.cz“ zabíral místo v panelu letadel** → odstraněn.
+- **Nešlo přeložit na Windows.** `Strings.h` kolidoval se systémovým
+  `<strings.h>` (Windows nerozlišuje velikost písmen) → `Lang.h`.
+- **Nešlo přeložit `WebConfig.cpp`.** Pole `MR` kolidovalo s makrem z
+  `xtensa/config/specreg.h` → popisné názvy. Krátké názvy velkými písmeny
+  v tomhle projektu nepoužívat.
 
 ---
 

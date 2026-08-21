@@ -1,189 +1,227 @@
-# ESPD35 PlaneRadar + Meteoradar
+# ESPD35 MeteoPlaneRadar
 
-**Živý radar letadel (ADS-B) a srážkový meteoradar ČHMÚ na dotykovém displeji.**
+Hodiny, radar letadel, srážkový meteoradar a předpověď počasí na desce
+**LaskaKit ESPD‑3.5"**. Bez pájení — stačí deska, USB‑C kabel a WiFi.
 
-Zařízení běží na desce **LaskaKit ESPD-3.5"** a v jednom přístroji spojuje **sledování letadel** v okolí a **animovanou srážkovou situaci** nad Českou republikou. Stačí deska a USB-C kabel - nic se nepájí ani nedrátuje, polohu si zjistí samo podle IP adresy.
-
-**Programovat nemusíte.** Hotový firmware nahrajete z prohlížeče - viz [Nahrání firmwaru](#nahrání-firmwaru-bez-programování).
-
-| Komponenta | Popis |
-| --- | --- |
-| **Deska** | [LaskaKit ESPD-3.5" ESP32-S3 TFT ILI9488 CAP Touch **Rev. 3.2**](https://www.laskakit.cz/laskakit-espd-35-esp32-3-5-tft-ili9488-touch/?variantId=12161) |
-| **MCU** | ESP32-S3, 16 MB flash + PSRAM |
-| **Displej** | 3.5" TFT ILI9488, 480x320, SPI |
-| **Dotyk** | kapacitní FT5436 (I2C) |
-| **Krabička** | [Krabička pro ESPD-3.5"](https://www.laskakit.cz/laskakit--krabicka-pro-espd-35/?variantId=12574) |
-
-> ### Inspirace
-> Projekt vychází z [petus/MeteoPlaneRadar](https://github.com/petus/MeteoPlaneRadar) (autor Petr, původně pro [chiptron.cz](https://chiptron.cz)), portovaného a rozšířeného pro obdélníkový displej ESPD-3.5. Ten sám staví na projektech [MatixYo/ESP32-Plane-Radar](https://github.com/MatixYo/ESP32-Plane-Radar) (radar letadel a zdroj adsb.fi) a [mylms/ESP-MeteoRadar](https://github.com/mylms/ESP-MeteoRadar) (srážkový meteoradar ČHMÚ).
+> Vychází z [petus/MeteoPlaneRadar](https://github.com/petus/MeteoPlaneRadar)
+> (autor Petr, původně pro chiptron.cz). Portováno a rozšířeno pro
+> [laskakit.cz](https://www.laskakit.cz).
 
 ---
 
 ## Co to umí
 
-Tři obrazovky v cyklu: **Letadla -> Meteoradar -> Nastavení**.
+Pět obrazovek. Přepínají se dlouhým stiskem nebo klepnutím na tečky dole.
+Čtyři z nich se dají vypnout.
 
-### Radar letadel
-
-Data z [adsb.fi](https://adsb.fi/) - veřejná ADS-B síť, zdarma a bez klíče. Vlastní přijímač nepotřebujete.
-
-- Displej rozdělený **3/4 mapa + 1/4 detail**. Střed mapy je vaše poloha (zaměřovací kříž).
-- Letadla jako **siluety natočené podle skutečného kurzu**; stroje bez hlášeného kurzu jako kroužek.
-- **Barva podle nadmořské výšky** (letová hladina), legenda vlevo. Vlevo nahoře počet letadel, vlevo dole rozsah.
-- **Detail letadla** v pravém panelu: volací znak, ICAO adresa, typ, vzdálenost, výška, rychlost, kurz, stoupání/klesání a hodiny. Ukazuje automaticky nejbližší letadlo, klepnutím zafixujete jiné.
-- **Rozsahy** 10 / 25 / 50 / 100 km. Pod srážkami i pod letadly se kreslí obrys ČR a města.
-- **Značky S/V/J/Z** po obvodu radaru, otáčejí se spolu s mapou.
-
-### Meteoradar ČHMÚ
-
-Srážkový kompozit z [ČHMÚ OpenData](https://opendata.chmi.cz/), nový snímek každých 5 minut.
-
-- **Animace 6 snímků** za posledních 25 minut, 2 snímky/s, mezi cykly krátká pauza. Nahoře uprostřed indikátor s časem snímku.
-- Barevná škála intenzity srážek v legendě, pod srážkami obrys ČR a města.
-- **Rozsahy** 25 / 50 / 100 / 200 km, pamatují se odděleně od rozsahu letadel.
-
-> Meteoradar ČHMÚ pokrývá **ČR a blízké okolí**. S polohou nastavenou jinam zůstane meteo obrazovka prázdná - data pro tu oblast neexistují. Radar letadel funguje kdekoliv.
-
-### Nastavení
-
-Jas, orientace mapy, jednotky (letecké ft/kt ↔ metrické m/km-h), stav sítě a uložená poloha, verze firmwaru. Tlačítka **WiFi + poloha (AP)**, **Firmware update (OTA)** a **Tovární reset**.
-
-**Pamatuje si stav.** Poslední obrazovka, rozsahy, jas, jednotky, orientace i poloha přežijí restart - deska naskočí tam, kde jste skončili.
-
----
-
-## Ovládání
-
-Deska nemá žádné tlačítko, ovládá se celá dotykem.
-
-| Gesto | Funkce |
+| Obrazovka | Co ukazuje |
 | --- | --- |
-| **Klepnutí na tečky dole uprostřed** | skok přímo na danou obrazovku |
-| **Dlouhý stisk (> 0,5 s) v levé polovině** | předchozí obrazovka |
-| **Dlouhý stisk v pravé polovině** | následující obrazovka |
-| Přejetí prstem vlevo/vpravo | změna rozsahu (Letadla, Meteoradar) |
-| Krátké klepnutí na letadlo | zafixování letadla v detailu |
-| Klepnutí do prázdné mapy nebo do panelu | zpět na automaticky nejbližší letadlo |
+| 🕐 **Hodiny** | Čas, datum, aktuální počasí, vítr, východ a západ slunce. Sekundy běží po elipse kolem displeje. |
+| ✈️ **Letadla** | Radar z [adsb.fi](https://adsb.fi) — silueta natočená podle kurzu, barva podle letové hladiny. V panelu detail nejbližšího letadla včetně trasy letu. Rozsahy 10 / 25 / 50 / 100 km. |
+| 🌧️ **Meteoradar** | Srážky z [ČHMÚ](https://opendata.chmi.cz), animace 6 snímků za posledních 25 minut. Rozsahy 25 / 50 / 100 / 200 km a celá ČR. |
+| 🌤️ **Předpověď** | 6 hodin, 3 dny, ovzduší (AQI, PM2.5, pyl). Z [Open‑Meteo](https://open-meteo.com). |
+| ⚙️ **Nastavení** | Jas, orientace mapy, jednotky, adresa webu, tovární reset. |
 
-### Orientace mapy ("Nahoře")
+Všechno ostatní se nastavuje **v prohlížeči** — poloha, obrazovky, filtry
+letadel, WiFi i aktualizace firmwaru.
 
-V Nastavení zvolíte, **který světový směr je nahoře** na radaru letadel - tedy směr, kterým se díváte z okna. Nastavíte `V` a letadla na displeji jsou ve stejném směru jako ta za sklem. Osm poloh po 45°, vedle tlačítek je kompasový náhled.
-
-Otáčí se projekce, ne displej, takže se spolu s letadly správně otočí i obrys států, města a ikony. **Meteoradar se záměrně neotáčí** - srážková mapa se čte severem nahoru.
-
-### Tovární reset
-
-Smaže WiFi údaje i nastavení a desku restartuje do konfiguračního portálu.
+Polohu není třeba zadávat, zjistí se podle IP adresy.
 
 ---
 
-## Nahrání firmwaru (bez programování)
+## Hardware
 
-Potřebujete jen prohlížeč **Chrome, Edge nebo Operu** (Firefox a Safari to neumí) a USB-C kabel, který přenáší data - hodně kabelů umí jen nabíjení a s nimi se deska v počítači vůbec neobjeví.
+| | |
+| --- | --- |
+| Deska | [LaskaKit ESPD‑3.5" ESP32‑S3 TFT ILI9488 CAP Touch Rev. 3.2](https://www.laskakit.cz/laskakit-espd-35-esp32-3-5-tft-ili9488-touch/?variantId=12161) |
+| Displej | 3.5" TFT ILI9488, 480×320, SPI |
+| Dotyk | kapacitní FT5436 (I2C) |
+| Krabička | [Krabička pro ESPD‑3.5"](https://www.laskakit.cz/laskakit--krabicka-pro-espd-35/?variantId=12574) |
 
-### 1. Stáhněte firmware
-
-Z [**Releases**](../../releases) si stáhněte soubor **`ESPD35_MeteoPlaneRadar_vX.USB.merged.bin`** - ten s `USB.merged`. Je v něm celý obraz paměti včetně jejího rozdělení, takže funguje i na úplně nové desce.
-
-### 2. Nahrajte ho z prohlížeče
-
-Otevřete **[esp32flasher.chiptron.cz](https://esp32flasher.chiptron.cz)** a projděte čtyři kroky na stránce:
-
-1. **Vyberte čip** - `ESP32-S3`.
-2. **Přetáhněte stažený `USB.merged.bin`** do vyznačené plochy.
-3. **Připojte desku** USB-C kabelem a klepněte na *Připojit desku*. Vyberte port v dialogu prohlížeče. Nástroj si ověří, že na desce opravdu je ESP32-S3.
-4. **Nahrát firmware**. Při prvním nahrání zapněte volbu *Smazat celou flash* - vyčistí i případná stará data z předchozího firmwaru.
-
-Po dokončení dejte desce reset (nebo odpojit a připojit napájení).
-
-> Nic se nikam neodesílá, celý nástroj běží ve vašem prohlížeči.
-
-### 3. Připojení k WiFi
-
-Po prvním zapnutí (nebo po továrním resetu) si deska vytvoří **vlastní otevřenou WiFi síť** a na displeji ukáže QR kód.
-
-1. **Namiřte na QR kód fotoaparát telefonu** - nabídne připojení k síti. Ručně: *Nastavení -> WiFi -> `ESPD35-MeteoPlaneRadar`*, síť je bez hesla.
-2. Telefon oznámí, že **síť nemá přístup k internetu**. To je v pořádku, zůstaňte připojení. Na Androidu na chvíli vypněte mobilní data, jinak telefon síť sám opustí a přepne se zpět.
-3. Konfigurační stránka se většinou otevře sama. Když ne, zadejte do prohlížeče **`http://192.168.4.1`**.
-4. Klepněte na **Configure WiFi**, vyberte svoji domácí síť a zadejte heslo. Na stejné stránce jsou i políčka pro ruční zadání polohy (`lat` / `lon`) - nechte je být, pokud vám sedí poloha zjištěná podle IP. Jinak je můžete přepsat.
-5. Uložte. Deska se připojí a naskočí radar.
-
-Konfiguraci můžete kdykoli vyvolat znovu: **Nastavení -> WiFi + poloha (AP)**.
-
-### 4. Aktualizace přes WiFi (OTA)
-
-Novou verzi (od verze 0.3.0) už nahrajete bezdrátově, bez kabelu.
-
-1. Z [Releases](../../releases) si stáhněte **`ESPD35_MeteoPlaneRadar_vX.OTA.bin`** - pozor, **ten bez `USB.merged`**.
-2. V zařízení jděte do **Nastavení -> Firmware update (OTA)**.
-3. Deska vytvoří stejnou WiFi síť jako při prvním nastavení a ukáže QR kód. **Připojte se k ní podle kroků 1 a 2 výše.**
-4. V prohlížeči otevřete **`http://192.168.4.1/update`**, vyberte stažený soubor a nahrajte ho.
-5. Průběh vidíte na displeji i v prohlížeči. Deska se sama restartuje do nové verze - ověřte si v Nastavení, že se změnila.
-
-Když se aktualizace nepovede, zůstane v desce původní verze. Režim OTA opustíte klepnutím na displej, po 5 minutách nečinnosti skončí sám.
-
-> ### ⚠️ Přechod z verze 0.2 a nižší
-> Verze 0.3.0 mění rozdělení paměti (dvě aplikační oblasti, aby bylo kam nahrát bezdrátovou aktualizaci). Poprvé je proto nutné nahrát `*.USB.merged.bin` přes USB podle kroků 1 a 2 - bezdrátová aktualizace by neměla kam zapsat. Stačí to jednou.
->
-> Jakou verzi máte, zjistíte v **Nastavení** pod nadpisem. Když tam žádná není, máte verzi starší než 0.3.0.
+Deska nemá žádné tlačítko — ovládá se celá dotykem.
 
 ---
 
-## Kompilace ze zdrojáků
+# Pro uživatele: nahrání bez programování
 
-Tahle část je jen pro ty, kdo si chtějí projekt upravit. Pokud jste nahráli hotový firmware, přeskočte ji.
+Nepotřebuješ Arduino IDE ani nic instalovat. Stačí prohlížeč.
 
-### 1. Knihovny
+**Potřebuješ:** Chrome nebo Edge (Firefox a Safari to neumí) a USB‑C kabel,
+který vede i data — ne jen nabíjecí.
 
-V Arduino IDE (**Nástroje -> Spravovat knihovny**) nainstalujte:
+1. Otevři **webový flasher** (odkaz na stránce projektu).
+2. Připoj desku do počítače kabelem ke konektoru označenému **„USB"**.
+3. Klikni na **Connect** a v seznamu vyber port desky.
+4. Klikni na **Install** a počkej. Deska se sama restartuje.
 
-| Knihovna | Autor | K čemu |
-| --- | --- | --- |
-| **GFX Library for Arduino** | moononournation | kreslení (POZOR: ne Adafruit GFX) |
-| **PNGdec** | bitbank2 | dekódování snímků ČHMÚ |
-| **ArduinoJson** (v7) | bblanchon | parsování dat z adsb.fi |
-| **WiFiManager** | tzapu | konfigurační WiFi portál |
-| **ElegantOTA** | ayushsharma82 | aktualizace přes WiFi |
+### První spuštění
 
-`Preferences`, `Wire`, `HTTPClient` a `WebServer` jsou součástí ESP32 core. Knihovny **QRCode** (ricmoo) a **FT6236** pro dotyk jsou přibalené v projektu.
+1. Deska vytvoří otevřenou WiFi síť **`ESPD35-MeteoPlaneRadar`**.
+2. Na displeji se ukáže **QR kód** — naskenuj ho telefonem a připoj se.
+3. V prohlížeči otevři **`http://192.168.4.1/`**, vyber svou WiFi a zadej heslo.
 
-> ElegantOTA se používá ve **výchozím (synchronním) režimu** nad `WebServer` z core - nic se v knihovně needituje a `ESPAsyncWebServer` ani `AsyncTCP` nejsou potřeba.
+Deska čeká, dokud síť nezadáš — žádný časový limit. Telefon nahlásí, že síť
+nemá internet; to nevadí.
 
-### 2. Nastavení Arduino IDE
+Potom najdeš nastavení na **`http://espd35meteoradar.local/`** (adresa je
+i na obrazovce Nastavení).
 
-Vyžaduje **ESP32 core 3.x**. V nabídce **Nástroje**:
+### Ovládání dotykem
+
+| Gesto | Co udělá |
+| --- | --- |
+| Dlouhý stisk vlevo / vpravo | předchozí / následující obrazovka |
+| Klepnutí na tečky dole | skok na danou obrazovku |
+| Přejetí prstem vlevo / vpravo | změna rozsahu |
+| Klepnutí na letadlo | zafixuje ho v detailu |
+| Klepnutí do prázdné mapy | zpět na nejbližší letadlo |
+
+### Nastavení v prohlížeči
+
+Šest záložek:
+
+- **Stav** — čas, adresa, signál, doba běhu, volná paměť, stav zdrojů dat.
+  Odsud jde přepnout obrazovku i rozsah na dálku.
+- **Poloha a displej** — poloha (ručně nebo vyhledáním města), jas ve dne
+  a v noci, automatické přepínání podle slunce.
+- **Obrazovky** — které se zobrazují, automatické střídání, styl sekund.
+- **Letadla** — jednotky, orientace mapy, výškové pásmo, filtry, hlídaný znak.
+- **WiFi** — vyhledání sítí a připojení.
+- **Správa** — heslo, záloha nastavení, aktualizace firmwaru, tovární reset.
+
+Změny platí **po klepnutí na Uložit nastavení**. Restart není potřeba.
+
+### Orientace mapy
+
+V Nastavení se volí, **který světový směr je nahoře** na radaru letadel — tedy
+směr, kterým se díváš z okna. Nastavíš `V` a letadla na displeji jsou ve stejném
+směru jako ta za sklem. Meteoradar se záměrně neotáčí, srážky se čtou severem
+nahoru.
+
+### Aktualizace firmwaru
+
+Ve **Správě** vyber soubor `ESPD35_MeteoPlaneRadar.ino.bin` (ten **bez**
+„merged") a klikni na Nahrát. Průběh je vidět v prohlížeči i na displeji.
+Když se to nepovede, zůstane v desce původní verze.
+
+### Když se něco pokazí
+
+| Problém | Řešení |
+| --- | --- |
+| Displej je černý | Nahrávalo se se špatným nastavením PSRAM. Nahraj znovu přes webový flasher. |
+| Prázdný meteoradar | Když neprší, kompozit je skoro černý. To je normální. |
+| Prázdný radar letadel | Zkus větší rozsah. V noci nebo mimo koridory nemusí být nic. |
+| Deska se nepřipojí k WiFi | Síť sama zapomene a vrátí se k QR kódu. Zkus zadat heslo znovu. |
+| Nejde `espd35meteoradar.local` | Použij IP adresu z obrazovky Nastavení. |
+| Zapomenuté heslo správce | Tovární reset na obrazovce Nastavení (dvě klepnutí na červené tlačítko). |
+
+---
+
+# Pro vývojáře: překlad ze zdrojáků
+
+### Knihovny
+
+V Arduino IDE (**Nástroje → Spravovat knihovny**):
+
+| Knihovna | Autor |
+| --- | --- |
+| GFX Library for Arduino | moononournation (**ne** Adafruit GFX) |
+| PNGdec | bitbank2 |
+| ArduinoJson (v7) | bblanchon |
+| FT6236 | DustinWatts — přikládá LaskaKit k desce |
+
+QRCode (ricmoo) je přibalený v projektu. Zbytek je součást ESP32 core:
+`WebServer`, `DNSServer`, `ESPmDNS`, `Update`, `Preferences`, `HTTPClient`.
+
+> WiFiManager ani ElegantOTA se od 0.4.0 **nepoužívají**. Portál i nahrávání
+> firmwaru obsluhuje vlastní web server. ElegantOTA je pod AGPL‑3.0, což
+> u zařízení obsluhujícího webovou stránku není zadarmo.
+
+### Nastavení Arduino IDE
+
+**Nástroje →**
 
 | Položka | Hodnota |
 | --- | --- |
 | Deska | ESP32S3 Dev Module |
-| **PSRAM** | **OPI PSRAM** |
+| **PSRAM** | **OPI PSRAM** ← bez toho zůstane displej černý |
 | Flash Size | 16MB (128Mb) |
-| **Partition Scheme** | **Custom** |
+| **Partition Scheme** | **Custom** ← použije přiložený `partitions.csv` |
 | USB CDC On Boot | Disable |
 | Upload Speed | 921600 |
 
-**PSRAM** je nutná - bez ní se nemá kam alokovat obrazový buffer a displej zůstane černý.
+Partition **Custom** je nutná pro OTA — tabulka má dvě aplikační oblasti
+po 6 MB. Po překladu zkontroluj v logu `of 6291456 bytes`.
 
-**Partition Scheme = Custom** použije přiložený `src/partitions.csv` se dvěma aplikačními oblastmi (2x 6 MB), aby bylo kam nahrát novou verzi přes OTA. Po překladu zkontrolujte v logu, že se hlásí `of 6291456 bytes`.
+Alternativně `arduino-cli compile --profile default` — verze core i knihoven
+jsou připnuté v `sketch.yaml`.
 
-Piny jsou předvyplněné pro ESPD-3.5 Rev 3.2 a měnit se nemusí. Ostatní konfigurace (časová zóna, výchozí poloha, rozsahy, intervaly stahování, limity, ladicí přepínače) je pohromadě v **`src/Config.h`**. Verze firmwaru je v **`src/Version.h`**, historie změn v **[CHANGELOG.md](CHANGELOG.md)**.
+### Piny (Config.h)
 
-### 3. Překlad a nahrání
+Předvyplněné pro ESPD‑3.5 Rev 3.2:
 
-Všechny soubory musí být v **jedné složce `ESPD35_MeteoPlaneRadar`** - Arduino IDE vyžaduje, aby se složka jmenovala stejně jako hlavní `.ino`.
+```c
+#define TFT_SCK   12      // displej ILI9488 (SPI)
+#define TFT_MOSI  11
+#define TFT_MISO  13
+#define TFT_CS    48
+#define TFT_DC    47
+#define TFT_RST   -1
+#define TFT_BL    45
+#define I2C_SDA   42      // dotyk FT5436
+#define I2C_SCL    2
+```
 
-Pro vydání se hodí oba soubory: `Sketch -> Export Compiled Binary` vyrobí aplikaci pro OTA, sloučený obraz pro web flasher pak musí vzniknout se **stejnou partition tabulkou**.
+### Struktura
 
-### Řešení problémů
+| Soubor | K čemu |
+| --- | --- |
+| `Config.h` | **jediný soubor, který obvykle měníš** — piny, časová zóna, rozsahy, intervaly, limity |
+| `Version.h` | verze firmwaru |
+| `Settings.*` | nastavení v NVS + serializace do JSON |
+| `Net.*` | HTTPS GET na jednom místě, kontrola paměti |
+| `Status.*` | stav zdrojů dat pro webovou stránku |
+| `Layout.*` | pevné pásy obrazovek + kontrola překryvů |
+| `Lang.*` | texty (ASCII na displej, UTF‑8 na web) |
+| `ADSB.*`, `Route.*` | letadla a trasy letů |
+| `CHMU.*` | srážkový kompozit |
+| `Forecast.*` | předpověď, slunce, ovzduší — jedním požadavkem |
+| `EuBorder.*`, `EuMapData.h` | hranice a města |
+| `Screen*.cpp` | jednotlivé obrazovky |
+| `WebConfig.*`, `WebPage.h` | web server a stránka |
+| `WiFiPortal.*` | připojení a přístupový bod |
 
-- **Displej zůstává černý** -> zkontrolujte **PSRAM: OPI PSRAM** v Nástrojích. Zdaleka nejčastější příčina.
-- **Deska se neobjeví v dialogu portu** -> skoro vždy kabel bez datových vodičů. Zkuste jiný.
-- **Dotyk nereaguje nebo má přehozené souřadnice** -> ověřte `I2C_SDA` / `I2C_SCL` v `Config.h`, případně přehoďte `TOUCH_ROTATION` mezi `3` a `1`.
-- **Výběr letadla se ruší "sám"** -> zapněte `TOUCH_DEBUG 1` v `Config.h` a sledujte sériovou linku (115200 Bd). Řádky `TOUCH: zahozeno N vadnych cteni` znamenají problém na I2C sběrnici (rušení, dlouhé vodiče), ne v datech z adsb.fi.
-- **OTA hlásí, že není kam zapsat** -> není zvolený **Partition Scheme = Custom**, takže se nepoužila tabulka se dvěma aplikačními oblastmi.
-- **Meteo hlásí "snimek moc siroky"** -> verze PNGdec s malým řádkovým bufferem.
-- **Prázdná mapa u meteoradaru** -> když zrovna neprší, kompozit je skoro černý. To je normální.
-- **Radar letadel je prázdný** -> zkuste větší rozsah; v noci nebo mimo letové koridory nemusí být nic.
+### Na co si dát pozor
+
+- **Krátké názvy velkými písmeny.** `xtensa/config/specreg.h` obsazuje `MR`,
+  `BR`, `PS`, `SAR`, `DDR`, `EPC`, `MISC`, `M0`–`M3` a další. Používej popisné
+  názvy.
+- **Názvy hlaviček** nesmí kolidovat se systémovými ani při ignorování velikosti
+  písmen — proto `Lang.h`, ne `Strings.h`.
+- **Z obsluhy HTTP požadavku se nikdy nekreslí.** Požadavky se řadí do fronty
+  a provádí je `loop()`. Jediná výjimka je průběh OTA.
+- **Font je 7bitové ASCII.** Na displej patří text bez diakritiky — `Lang.h`
+  drží obě verze.
+- **Klíče v NVS se nepřejmenovávají**, aby desky po aktualizaci nepřišly
+  o nastavení. Když se mění význam, zakládá se nový klíč.
+- **Layout: jedna skupina = jeden nárok.** Hodnota a jednotka se nesmí
+  narokovat zvlášť, obdélníky by se překryly a druhý nárok Layout odmítne.
+
+### Sériový výstup (115200 Bd)
+
+Přes konektor označený **„USB"** (nativní USB ESP32‑S3), ne přes ten druhý.
+
+```
+=== ESPD35_MeteoPlaneRadar v0.4.0 ===
+Duvod restartu: zapnuti napajeni
+WiFi ok, IP 192.168.1.42
+Web: http://espd35meteoradar.local/
+Letadla: 11 (8421 bajtu)
+Meteoradar: 6 ramcu
+Predpoved: 6 h / 3 d
+```
+
+Podrobnější výpisy: `TOUCH_DEBUG` a `LAYOUT_DEBUG` v `Config.h`.
 
 ---
 
@@ -191,18 +229,21 @@ Pro vydání se hodí oba soubory: `Sketch -> Export Compiled Binary` vyrobí ap
 
 | Data | Zdroj | Poznámka |
 | --- | --- | --- |
-| Letadla | [adsb.fi](https://adsb.fi/) | zdarma, bez klíče, **jen osobní nekomerční použití** |
-| Srážky | [ČHMÚ OpenData](https://opendata.chmi.cz/) | srážkový kompozit MAX_Z, nový snímek každých ~5 min |
-| Poloha | [ip-api.com](https://ip-api.com/) | automatická detekce podle IP |
+| Letadla | [adsb.fi](https://adsb.fi/) | zdarma, bez klíče |
+| Trasy letů | [adsbdb.com](https://www.adsbdb.com/) | zdarma, bez klíče |
+| Srážky | [ČHMÚ OpenData](https://opendata.chmi.cz/) | kompozit MAX_Z, nový snímek ~5 min |
+| Počasí | [Open‑Meteo](https://open-meteo.com/) | zdarma, bez klíče |
+| Poloha | [ip‑api.com](https://ip-api.com/) | detekce podle IP |
+| Mapa | Natural Earth, GeoNames | volné dílo / CC BY 4.0 |
 
-> ⚠️ **ČHMÚ i adsb.fi vyžadují uvedení zdroje.** Bezplatné API adsb.fi je určené pro osobní použití.
+> ⚠️ Zdroje vyžadují uvedení. Bezplatná API jsou pro **osobní nekomerční
+> použití**; pro komerční nasazení si zajisti odpovídající přístup k datům.
 
 ---
 
-## Licence a poděkování
+## Licence
 
-Kód je pod licencí **MIT** - volně použitelný a upravitelný.
+Kód je pod **MIT**. Vložená knihovna QRCode (ricmoo) rovněž MIT.
+Data ČHMÚ, adsb.fi, adsbdb a Open‑Meteo podléhají podmínkám poskytovatelů.
 
-Projekt vychází z [petus/MeteoPlaneRadar](https://github.com/petus/MeteoPlaneRadar) (autor Petr, původně pro chiptron.cz). Port a rozšíření pro ESPD-3.5 (ILI9488 480x320, dotyk FT5436) pro [laskakit.cz](https://www.laskakit.cz).
-
-Vloženou QRCode knihovnu napsal ricmoo (MIT). Data ČHMÚ a adsb.fi podléhají podmínkám poskytovatelů.
+Historie změn: [CHANGELOG.md](CHANGELOG.md).
