@@ -14,6 +14,10 @@
 #include <math.h>
 #include <string.h>
 #include "esp_heap_caps.h"   // PSRAM body buffer
+#include "Net.h"        // strazce interni pameti + hlavicka Date
+#include "Status.h"     // jednoradkove hlaseni pro stavovou stranku
+#include "Settings.h"   // vyskove pasmo, "jen s volacim znakem"
+#include "Config.h"     // SQUAWK_*
 
 static const float KM_PER_NM = 1.852f;
 
@@ -28,16 +32,47 @@ static Aircraft s_tmp[ADSB_MAX];
 static float s_tmpD2[ADSB_MAX];
 static void (*s_poll)() = nullptr;
 
+// Kolik letadel odfiltrovalo NASTAVENI (ne vzdalenost). Drzi se zvlast, aby
+// slo na stavove strance odlisit "nad vami nic nelita" od "mate prisny filtr".
+static int s_filteredOut = 0;
+
 void ADSB_SetPollFn(void (*fn)()) { s_poll = fn; }
 int  ADSB_Count() { return s_count; }
 const Aircraft* ADSB_List() { return s_list; }
 
-int ADSB_FindByIcao(const char* icao) {
-  if (!icao || !icao[0]) return -1;
+int ADSB_FindByHex(const char* hex) {
+  if (!hex || !hex[0]) return -1;
   for (int i = 0; i < s_count; i++) {
-    if (strcmp(s_list[i].icao, icao) == 0) return i;
+    if (strcmp(s_list[i].hex, hex) == 0) return i;
   }
   return -1;   // uz neni v datech
+}
+
+int ADSB_FilteredOut() { return s_filteredOut; }
+
+const char* ADSB_EmergencyCode(const Aircraft& a) {
+  if (!a.squawk[0]) return nullptr;
+  if (strcmp(a.squawk, SQUAWK_HIJACK) == 0) return SQUAWK_HIJACK;
+  if (strcmp(a.squawk, SQUAWK_RADIO)  == 0) return SQUAWK_RADIO;
+  if (strcmp(a.squawk, SQUAWK_EMERG)  == 0) return SQUAWK_EMERG;
+  return nullptr;
+}
+
+// Projde letadlo uzivatelskym filtrem? Nouzovy squawk filtr PRESKAKUJE -
+// letadlo hlasici 7700 je presne to, co chcete videt, i kdyz je zrovna mimo
+// nastavene vyskove pasmo.
+static bool passesFilter(const Aircraft& a) {
+  if (Settings_SquawkAlert() && ADSB_EmergencyCode(a)) return true;
+  if (Settings_OnlyWithCallsign() && !a.callsign[0]) return false;
+  const uint16_t lo = Settings_AltMinFt();
+  const uint16_t hi = Settings_AltMaxFt();
+  // Letadlo, ktere vysku vubec nehlasi (altFt == 0), se pasmem neposuzuje -
+  // jinak by ho spodni mez vyhodila, aniz by o nem cokoli bylo znamo.
+  if (a.altFt > 0.0f) {
+    if (a.altFt < (float)lo) return false;
+    if (a.altFt > (float)hi) return false;
+  }
+  return true;
 }
 
 static void poll() { if (s_poll) s_poll(); }
@@ -138,11 +173,19 @@ static void buildFilter(JsonDocument& filter) {
   o["baro_rate"]    = true;
   o["t"]            = true;
   o["type"]         = true;
+  o["squawk"]       = true;
 }
 
 bool ADSB_Fetch(double lat, double lon, float radiusKm) {
   // Bez pripojeni -> nech, co je na obrazovce (radar NEVYMAZAT).
-  if (WiFi.status() != WL_CONNECTED) { Serial.println("ADSB: no WiFi"); return false; }
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("ADSB: no WiFi");
+    Status_Set(ST_ADSB, "bez WiFi");
+    return false;
+  }
+  // TLS handshake potrebuje ~45 kB interni RAM; bez ni selze uvnitr mbedTLS
+  // a navenek to vypada jako hole "HTTP -1". Radeji poll preskocit.
+  if (!Net_HeapOk("ADSB")) { Status_Set(ST_ADSB, "malo pameti"); return false; }
 
   float distNm = radiusKm / KM_PER_NM;
   char url[128];
@@ -170,14 +213,18 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
     // Slusne se predstavit - bezplatne API adsb.fi o to zada.
     http.addHeader("User-Agent", "ESPD35_MeteoPlaneRadar/1.0 (+https://chiptron.cz)");
     http.addHeader("Accept", "application/json");
+    // Hlavicka Date je zaloha hodin, kdyz NTP neprojde (viz Clock.h).
+    http.collectHeaders(NET_DATE_HEADER, 1);
 
     int code = http.GET();
     if (code != HTTP_CODE_OK) {
       Serial.printf("ADSB: HTTP %d (pokus %d)\n", code, attempt);
       http.end();
       if (attempt < MAX_ATTEMPTS) { delay(200); continue; }
+      Status_Set(ST_ADSB, "HTTP %d", code);
       return false;   // nech posledni dobra data
     }
+    Net_NoteDate(http);
 
     // Nacti CELE telo (do PSRAM), pak teprve parsuj - zadny parse ze streamu.
     bool complete = true;
@@ -215,6 +262,7 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
 
     if (!doc["ac"].is<JsonArray>()) {
       Serial.println("ADSB: chybi pole 'ac' - drzim posledni data");
+      Status_Set(ST_ADSB, "spatny tvar odpovedi");
       return false;   // validni JSON, ale spatny tvar; retry by nepomohl
     }
 
@@ -235,6 +283,8 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
     float worstD2  = -1.0f;
     int   dropped  = 0;       // kolik letadel se nevešlo (jen pro vypis)
 
+    s_filteredOut = 0;
+
     for (JsonObjectConst plane : ac) {
       float plat, plon;
       if (!readFloat(plane, "lat", &plat) || !readFloat(plane, "lon", &plon)) continue;
@@ -247,6 +297,48 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
       // ve vzduchu. U letiste by jinak dokazala zaplnit cely ADSB_MAX.
       JsonVariantConst ab = plane["alt_baro"];
       if (ab.is<const char*>() && strcmp(ab.as<const char*>(), "ground") == 0) continue;
+
+      // Letadlo se nejdriv poskladá CELE do docasne promenne. Az pak jde na
+      // radu filtr a teprve potom se pro nej hleda misto v poli - jinak by
+      // odfiltrovane letadlo stihlo zabrat slot nekomu, kdo se ma zobrazit.
+      Aircraft cand;
+      cand.lat = plat;
+      cand.lon = plon;
+      cand.onGround = false;
+
+      // Smer letu - poznamename, jestli vubec existuje.
+      float tr = 0;
+      if (readFloat(plane, "track", &tr) || readFloat(plane, "true_heading", &tr)) {
+        cand.track = tr;
+        cand.hasTrack = true;
+      } else {
+        cand.track = 0;
+        cand.hasTrack = false;
+      }
+      // Vyska (baro), rychlost, stoupani.
+      float f = 0;
+      cand.altFt    = readFloat(plane, "alt_baro", &f) ? f : 0;
+      cand.gsKt     = readFloat(plane, "gs", &f) ? f : 0;
+      cand.baroRate = readFloat(plane, "baro_rate", &f) ? f : 0;
+      // Typ letadla (ruzne klice dle zdroje).
+      const char* ty = plane["t"] | (plane["type"] | "");
+      strncpy(cand.type, ty, sizeof(cand.type) - 1);
+      cand.type[sizeof(cand.type) - 1] = '\0';
+      // ICAO hex - stabilni identifikator (nemeni se mezi stazenimi).
+      const char* hx = plane["hex"] | "";
+      strncpy(cand.hex, hx, sizeof(cand.hex) - 1);
+      cand.hex[sizeof(cand.hex) - 1] = '\0';
+      // Kod odpovidace. Jen ctyri osmickove cislice; cokoli jineho zahodime,
+      // aby se do porovnani s 7500/7600/7700 nedostal zmetek.
+      const char* sq = plane["squawk"] | "";
+      if (strlen(sq) == 4 && sq[0] >= '0' && sq[0] <= '7') {
+        strncpy(cand.squawk, sq, sizeof(cand.squawk) - 1);
+        cand.squawk[sizeof(cand.squawk) - 1] = '\0';
+      }
+      copyCallsign(&cand, plane);
+
+      // Uzivatelsky filtr (vyskove pasmo, jen s volacim znakem).
+      if (!passesFilter(cand)) { s_filteredOut++; continue; }
 
       // Vzdalenost od stredu (km^2, plocha azimutalni aproximace - staci nam
       // na porovnavani, nemusi byt presna).
@@ -270,32 +362,7 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
       }
 
       s_tmpD2[slot] = d2;
-      s_tmp[slot].lat = plat;
-      s_tmp[slot].lon = plon;
-      s_tmp[slot].onGround = false;
-      // Smer letu - poznamename, jestli vubec existuje.
-      float tr = 0;
-      if (readFloat(plane, "track", &tr) || readFloat(plane, "true_heading", &tr)) {
-        s_tmp[slot].track = tr;
-        s_tmp[slot].hasTrack = true;
-      } else {
-        s_tmp[slot].track = 0;
-        s_tmp[slot].hasTrack = false;
-      }
-      // Vyska (baro), rychlost, stoupani.
-      float f = 0;
-      s_tmp[slot].altFt    = readFloat(plane, "alt_baro", &f) ? f : 0;
-      s_tmp[slot].gsKt     = readFloat(plane, "gs", &f) ? f : 0;
-      s_tmp[slot].baroRate = readFloat(plane, "baro_rate", &f) ? f : 0;
-      // Typ letadla (ruzne klice dle zdroje).
-      const char* ty = plane["t"] | (plane["type"] | "");
-      strncpy(s_tmp[slot].type, ty, sizeof(s_tmp[slot].type) - 1);
-      s_tmp[slot].type[sizeof(s_tmp[slot].type) - 1] = '\0';
-      // ICAO hex - stabilni identifikator (nemeni se mezi stazenimi).
-      const char* hx = plane["hex"] | "";
-      strncpy(s_tmp[slot].icao, hx, sizeof(s_tmp[slot].icao) - 1);
-      s_tmp[slot].icao[sizeof(s_tmp[slot].icao) - 1] = '\0';
-      copyCallsign(&s_tmp[slot], plane);
+      s_tmp[slot] = cand;
     }
 
     // Commitni docasny snimek do ziveho seznamu naraz.
@@ -304,7 +371,12 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
     if (dropped) Serial.printf("Letadla: %d (%ld bajtu, %d vzdalenych vynechano)\n",
                                n, len, dropped);
     else         Serial.printf("Letadla: %d (%ld bajtu)\n", n, len);
+    if (s_filteredOut) Serial.printf("Letadla: %d odfiltrovano nastavenim\n", s_filteredOut);
+
+    if (s_filteredOut) Status_Set(ST_ADSB, "OK, %d letadel (%d filtrem)", n, s_filteredOut);
+    else               Status_Set(ST_ADSB, "OK, %d letadel", n);
     return true;
   }
+  Status_Set(ST_ADSB, "stahovani selhalo");
   return false;
 }

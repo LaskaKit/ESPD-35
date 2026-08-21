@@ -21,9 +21,16 @@ struct Aircraft {
   // nikdy ne indexu v poli.
   // 8 bajtu: adsb.fi pred neICAO cile (TIS-B/ADS-R) pisi '~', tedy 7 znaku
   // plus ukoncovaci nula.
-  char  icao[8] = "";
+  //
+  // Od 0.4.0 se pole jmenuje "hex", ne "icao" - stejne jako klic v odpovedi
+  // adsb.fi a stejne jako ve zdrojovem projektu petus/MeteoPlaneRadar, aby
+  // slo prenaset kod mezi obema bez tichych zamen.
+  char  hex[8] = "";
   char  callsign[10] = "";
   char  type[10] = "";        // typ letadla (napr. A320), pokud dostupny
+  // Kod odpovidace jako ctyri osmickove cislice. Drzi se jako TEXT, ne cislo:
+  // 7700 je osmickovy kod a "0021" nesmi zdegenerovat na 21.
+  char  squawk[6] = "";
   bool  onGround = false;     // vzdy false - pozemni letadla se uz nezarazuji
   bool  hasTrack = false;     // false = smer neznamy (kresli se jinak)
 };
@@ -38,7 +45,17 @@ int    ADSB_Count();
 const Aircraft* ADSB_List();
 
 // Dohleda letadlo podle ICAO hex adresy. Vraci aktualni index v seznamu, nebo
-// -1, kdyz v poslednich datech neni (opustilo oblast, nebo se neveslo do
-// ADSB_MAX). Pouzivat misto drzeni indexu mezi stazenimi - seznam se pokazde
-// staví znovu a poradi neni zarucene.
-int    ADSB_FindByIcao(const char* icao);
+// -1, kdyz v poslednich datech neni (opustilo oblast, neveslo se do ADSB_MAX,
+// nebo ho odfiltrovalo nastaveni). Pouzivat misto drzeni indexu mezi
+// stazenimi - seznam se pokazde stavi znovu a poradi neni zarucene.
+int    ADSB_FindByHex(const char* hex);
+
+// Hlasi tohle letadlo nouzovy kod odpovidace?
+//   7500 protipravni cin (unos), 7600 vypadek radia, 7700 obecna nouze
+// Vraci ten kod, nebo nullptr, kdyz o zadny z nich nejde.
+const char* ADSB_EmergencyCode(const Aircraft& a);
+
+// Kolik letadel poslední stazeni odfiltrovalo podle nastaveni (vyskove pasmo,
+// jen s volacim znakem). Pro stavovou stranku - aby prazdny radar sel odlisit
+// od radaru s prisnym filtrem.
+int    ADSB_FilteredOut();

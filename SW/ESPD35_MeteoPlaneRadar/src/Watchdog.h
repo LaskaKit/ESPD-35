@@ -8,5 +8,11 @@
 
 void Watchdog_Begin();     // spusti WDT a prihlasi loop task
 void Watchdog_Feed();      // nakrmit (volat v loop())
-void Watchdog_Suspend();   // docasne odhlasit (napr. behem blokujiciho portalu)
-void Watchdog_Resume();    // znovu prihlasit
+
+// POZN.: Watchdog_Suspend()/Resume() zaniklo ve verzi 0.5.0. Existovalo jen
+// kvuli blokujicimu portalu WiFiManageru a blokujicimu rezimu ElegantOTA -
+// obojí bezelo nekolik minut mimo loop() a watchdog nemel kdo krmit. Od 0.5.0
+// nic hlavni smycku neblokuje (vlastni portal i nahravani firmwaru bezi
+// z loop()), takze watchdog uz nemusi nikdy spat. To je samo o sobe zvyseni
+// spolehlivosti: deska byla driv bez dohledu presne ve chvili, kdy s ni
+// uzivatel pracoval.

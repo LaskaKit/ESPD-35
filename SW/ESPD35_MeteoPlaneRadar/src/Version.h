@@ -11,4 +11,4 @@
 
 // Pri kazdem vydani zvysit (zobrazuje se na obrazovce Nastaveni, na OTA
 // obrazovce a v seriovem vypisu pri startu). Zmenu popsat v CHANGELOG.md.
-#define FW_VERSION "0.3.0"
+#define FW_VERSION "0.4.0"

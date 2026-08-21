@@ -16,9 +16,13 @@
 //  i ikony letadel se tak otoci spolecne a dotykove souradnice zustavaji platne.
 // =============================================================================
 #include "ScreenPlanes.h"
+#include "Layout.h"
+#include "Route.h"
+#include "Outside.h"
+#include "Lang.h"
 #include "ADSB.h"
 #include "Settings.h"
-#include "CzBorder.h"
+#include "EuBorder.h"
 #include "UI.h"
 #include "Config.h"
 
@@ -55,7 +59,7 @@ static String s_status = "Start...";
 //  stavi znovu a jedno letadlo, ktere opusti oblast, posune vsechna za nim.
 //  "" = nic vybrano -> detail ukazuje automaticky nejblizsi letadlo.
 // -----------------------------------------------------------------------------
-static char s_selIcao[8] = "";
+static char s_selHex[8] = "";
 
 // Tolerance vypadku. adsb.fi obcas letadlo v jednom stazeni vynecha a v dalsim
 // ho zase posle. Kdyby se vyber zrusil hned pri prvnim vypadku, vypadalo by to,
@@ -68,31 +72,32 @@ static bool     s_selCacheOk = false;
 // Obrazovkove pozice + ICAO letadel z posledniho vykresleni (pro tap-to-select).
 static int  s_planeX[ADSB_MAX];
 static int  s_planeY[ADSB_MAX];
-static char s_planeIcao[ADSB_MAX][8];
+static char s_planeHex[ADSB_MAX][8];
 static int  s_planeN = 0;
 
-bool ScreenPlanes_DetailOpen() { return s_selIcao[0] != '\0'; }
+bool ScreenPlanes_DetailOpen() { return s_selHex[0] != '\0'; }
 
 // reason = kratky text do seriove linky, aby slo poznat PROC se vyber zrusil
 // (falesny dotyk vs. letadlo skutecne zmizelo z dat).
 static void selectNone(const char* reason) {
 #if TOUCH_DEBUG
-  if (s_selIcao[0]) Serial.printf("SEL: zruseno (%s) icao=%s\n", reason, s_selIcao);
+  if (s_selHex[0]) Serial.printf("SEL: zruseno (%s) hex=%s\n", reason, s_selHex);
 #else
   (void)reason;
 #endif
-  s_selIcao[0] = '\0';
+  s_selHex[0] = '\0';
   s_selMiss = 0;
   s_selCacheOk = false;
+  Route_Clear();          // zrusit i pripadny cekajici dotaz na trasu
 }
 
-static void selectIcao(const char* icao) {
-  strncpy(s_selIcao, icao, sizeof(s_selIcao) - 1);
-  s_selIcao[sizeof(s_selIcao) - 1] = '\0';
+static void selectHex(const char* hex) {
+  strncpy(s_selHex, hex, sizeof(s_selHex) - 1);
+  s_selHex[sizeof(s_selHex) - 1] = '\0';
   s_selMiss = 0;
   s_selCacheOk = false;
 #if TOUCH_DEBUG
-  Serial.printf("SEL: vybrano icao=%s\n", s_selIcao);
+  Serial.printf("SEL: vybrano hex=%s\n", s_selHex);
 #endif
 }
 
@@ -145,7 +150,7 @@ static float distKm(float lat, float lon, double clat, double clon) {
   return sqrtf(dxKm * dxKm + dyKm * dyKm);
 }
 
-// Wrapper pro CzBorder (mesta/obrys) - stejna projekce jako letadla.
+// Wrapper pro EuBorder (hranice a mesta) - stejna projekce jako letadla.
 static void cityProject(float lat, float lon, int* sx, int* sy) {
   project(lat, lon, Settings_Lat(), Settings_Lon(), currentRange(), sx, sy);
 }
@@ -202,13 +207,23 @@ bool ScreenPlanes_Tick() {
 
     // Vyhodnoceni vyberu se dela TADY, tedy jednou za stazeni. V Draw() by se
     // pocitalo vicekrat za sekundu a grace perioda by vyprsela behem chvile.
-    if (s_dataOk && s_selIcao[0]) {
-      int idx = ADSB_FindByIcao(s_selIcao);
+    if (s_dataOk && s_selHex[0]) {
+      int idx = ADSB_FindByHex(s_selHex);
       if (idx >= 0) {
         s_selCache   = ADSB_List()[idx];
         s_selCacheOk = true;
         s_selMiss    = 0;
+
+        // Vybrane letadlo OPUSTILO ZOBRAZENOU MAPU. Grace perioda je urcena
+        // na vypadky dat, ne na tohle - drzet v panelu stroj, ktery uz na
+        // obrazovce neni, nedava smysl. Vyber se proto zrusi hned a panel se
+        // vrati k automaticky nejblizsimu letadlu.
+        if (distKm(s_selCache.lat, s_selCache.lon, Settings_Lat(), Settings_Lon())
+            > currentRange()) {
+          selectNone("letadlo opustilo mapu");
+        }
       } else if (++s_selMiss > DETAIL_GRACE_POLLS) {
+        // Vypadlo z dat i po tolerovanych vypadcich - zpet na nejblizsi.
         selectNone("letadlo zmizelo z dat");
       }
     }
@@ -238,7 +253,7 @@ bool ScreenPlanes_HandleTap(int x, int y) {
   // Dotek v pravem panelu -> zrusit rucni vyber (zpet na nejblizsi).
   // V panelu uz nejsou zadna tlacitka, takze se neni s cim trefit vedle.
   if (x >= MAP_W) {
-    if (!s_selIcao[0]) return false;
+    if (!s_selHex[0]) return false;
     selectNone("tap do panelu");
     return true;
   }
@@ -252,9 +267,9 @@ bool ScreenPlanes_HandleTap(int x, int y) {
     if (d < bestD) { bestD = d; best = i; }
   }
   if (best >= 0) {
-    selectIcao(s_planeIcao[best]);
+    selectHex(s_planeHex[best]);
   } else {
-    if (!s_selIcao[0]) return false;
+    if (!s_selHex[0]) return false;
     selectNone("tap mimo letadlo");
   }
   return true;
@@ -267,6 +282,13 @@ bool ScreenPlanes_HandleTap(int x, int y) {
 //  pinned           -> letadlo je rucne zafixovane (jinak automaticky nejblizsi)
 //  stale            -> data jsou z cache, letadlo v poslednim stazeni chybelo
 // -----------------------------------------------------------------------------
+// Rozvrzeni radku v detailovem panelu. Sest radku po PANEL_ROW_H pixelech
+// zacina na PANEL_ROW_Y0 a konci na 58 + 6*29 = 232, tedy nad oddelovacem
+// trasy na y = 236. Kdyz se tyhle konstanty zmeni, musi to porad platit.
+#define PANEL_ROW_Y0  58
+#define PANEL_ROW_H   29
+#define PANEL_SEP_Y  236
+
 static void drawPanel(const Aircraft* ac, float distKmVal, bool pinned, bool stale) {
   const int x0 = MAP_W;
   gfx->fillRect(x0, 0, PANEL_W, LCD_HEIGHT, C_DKGRAY);     // pozadi panelu
@@ -279,10 +301,25 @@ static void drawPanel(const Aircraft* ac, float distKmVal, bool pinned, bool sta
   gfx->setCursor(tx, 6);
   gfx->print(pinned ? "VYBRANE" : "NEJBLIZSI");
 
+  // Nouzovy kod odpovidace prebije nadpis - je to jedina informace na teto
+  // obrazovce, kvuli ktere stoji za to prerusit, co uzivatel prave dela.
+  if (ac && Settings_SquawkAlert()) {
+    const char* em = ADSB_EmergencyCode(*ac);
+    if (em) {
+      const char* word = (strcmp(em, SQUAWK_HIJACK) == 0) ? T(S_HIJACK)
+                       : (strcmp(em, SQUAWK_RADIO)  == 0) ? T(S_RADIO_FAIL)
+                                                          : T(S_EMERGENCY);
+      gfx->fillRect(x0 + 1, 2, PANEL_W - 2, 14, C_RED);
+      gfx->setTextColor(C_WHITE);
+      gfx->setCursor(tx, 6);
+      gfx->print(word);
+    }
+  }
+
   if (!ac) {
     gfx->setTextSize(2); gfx->setTextColor(C_GRAY);
-    gfx->setCursor(tx, 40); gfx->print("zadne");
-    gfx->setCursor(tx, 62); gfx->print("v okruhu");
+    gfx->setCursor(tx, 40); gfx->print(T(S_NONE_IN_RANGE));
+    gfx->setCursor(tx, 62); gfx->print(T(S_IN_RANGE));
   } else {
     char line[40];
 
@@ -293,50 +330,149 @@ static void drawPanel(const Aircraft* ac, float distKmVal, bool pinned, bool sta
 
     // ICAO hex - podle nej se letadlo drzi mezi stazenimi.
     gfx->setTextSize(1); gfx->setTextColor(C_GRAY);
-    gfx->setCursor(tx, 38); gfx->print(ac->icao);
+    gfx->setCursor(tx, 38); gfx->print(ac->hex);
 
     // Upozorneni, ze data uz nejsou cerstva (grace perioda).
     if (stale) {
       gfx->setTextColor(C_YELLOW);
-      gfx->setCursor(tx, 52); gfx->print("signal ztracen");
+      gfx->setCursor(tx, 52); gfx->print(T(S_SIGNAL_LOST));
     }
 
-    int ty = 70;
-    gfx->setTextSize(1); gfx->setTextColor(C_WHITE);
+    // --- Radky detailu: maly popisek, VELKA hodnota, mala jednotka --------
+    //
+    // Panel je siroky PANEL_W (124 px), takze pri velikosti 1 se vejde 19
+    // znaku a pri velikosti 2 devet. Driv byl cely radek velikosti 1 vcetne
+    // hodnoty ("Vyska: 35000 ft") - hodnota se ztracela mezi popiskem
+    // a jednotkou. Nove nese velikost 2 jen to cislo, ktere clovek hleda;
+    // popisek a jednotka zustavaji male.
+    //
+    // Sirka se HLIDA: kdyby se hodnota s jednotkou do panelu nevesla, spadne
+    // zpatky na velikost 1, misto aby pretekla do mapy.
+    int ty = PANEL_ROW_Y0;
+    for (int row = 0; row < 6; row++) {
+      char label[12] = "", value[12] = "", unit[8] = "";
+      switch (row) {
+        case 0:
+          snprintf(label, sizeof(label), "Typ");
+          snprintf(value, sizeof(value), "%s", ac->type[0] ? ac->type : "-");
+          break;
+        case 1:
+          snprintf(label, sizeof(label), "Vzdalenost");
+          snprintf(value, sizeof(value), "%.1f", distKmVal);
+          snprintf(unit, sizeof(unit), "km");
+          break;
+        case 2:
+          snprintf(label, sizeof(label), "Vyska");
+          if (metric) { snprintf(value, sizeof(value), "%.0f", ac->altFt * 0.3048f);
+                        snprintf(unit, sizeof(unit), "m"); }
+          else        { snprintf(value, sizeof(value), "%.0f", ac->altFt);
+                        snprintf(unit, sizeof(unit), "ft"); }
+          break;
+        case 3:
+          snprintf(label, sizeof(label), "Rychlost");
+          if (metric) { snprintf(value, sizeof(value), "%.0f", ac->gsKt * 1.852f);
+                        snprintf(unit, sizeof(unit), "km/h"); }
+          else        { snprintf(value, sizeof(value), "%.0f", ac->gsKt);
+                        snprintf(unit, sizeof(unit), "kt"); }
+          break;
+        case 4:
+          snprintf(label, sizeof(label), "Kurz");
+          if (ac->hasTrack) { snprintf(value, sizeof(value), "%.0f", ac->track);
+                              snprintf(unit, sizeof(unit), "deg"); }
+          else                snprintf(value, sizeof(value), "?");
+          break;
+        default:
+          snprintf(label, sizeof(label), "Stoupani");
+          if (metric) { snprintf(value, sizeof(value), "%.1f", ac->baroRate * 0.00508f);
+                        snprintf(unit, sizeof(unit), "m/s"); }
+          else        { snprintf(value, sizeof(value), "%.0f", ac->baroRate);
+                        snprintf(unit, sizeof(unit), "ft/m"); }
+          break;
+      }
 
-    if (ac->type[0]) snprintf(line, sizeof(line), "Typ:  %s", ac->type);
-    else             snprintf(line, sizeof(line), "Typ:  -");
-    gfx->setCursor(tx, ty); gfx->print(line); ty += 20;
+      // Popisek
+      gfx->setTextSize(1); gfx->setTextColor(C_GRAY);
+      gfx->setCursor(tx, ty); gfx->print(label);
 
-    snprintf(line, sizeof(line), "Vzdal: %.1f km", distKmVal);
-    gfx->setCursor(tx, ty); gfx->print(line); ty += 20;
+      // Hodnota - velikost 2, kdyz se vejde i s jednotkou, jinak velikost 1.
+      const int avail = PANEL_W - 10;
+      int vSize = 2;
+      int vw = (int)strlen(value) * 6 * vSize;
+      const int uw = (int)strlen(unit) * 6;
+      if (vw + (unit[0] ? uw + 3 : 0) > avail) { vSize = 1; vw = (int)strlen(value) * 6; }
 
-    if (metric) snprintf(line, sizeof(line), "Vyska: %.0f m", ac->altFt * 0.3048f);
-    else        snprintf(line, sizeof(line), "Vyska: %.0f ft", ac->altFt);
-    gfx->setCursor(tx, ty); gfx->print(line); ty += 20;
+      uint16_t vCol = C_WHITE;
+      if (row == 5) vCol = (ac->baroRate > 100) ? C_GREEN
+                         : (ac->baroRate < -100) ? C_ORANGE : C_GRAY;
 
-    if (metric) snprintf(line, sizeof(line), "Rychl: %.0f km/h", ac->gsKt * 1.852f);
-    else        snprintf(line, sizeof(line), "Rychl: %.0f kt", ac->gsKt);
-    gfx->setCursor(tx, ty); gfx->print(line); ty += 20;
+      gfx->setTextSize((uint8_t)vSize); gfx->setTextColor(vCol);
+      gfx->setCursor(tx, ty + 10); gfx->print(value);
 
-    if (ac->hasTrack) snprintf(line, sizeof(line), "Kurz:  %.0f deg", ac->track);
-    else              snprintf(line, sizeof(line), "Kurz:  neznamy");
-    gfx->setCursor(tx, ty); gfx->print(line); ty += 20;
+      if (unit[0]) {
+        gfx->setTextSize(1); gfx->setTextColor(C_GRAY);
+        // Jednotka sedi na spodni hrane cisla, ne na horni - jinak by
+        // "vlala" nad radkem.
+        gfx->setCursor(tx + vw + 3, ty + 10 + (vSize == 2 ? 8 : 0));
+        gfx->print(unit);
+      }
 
-    // Stoupani/klesani vc. kratke sipky (aby text nepretekal panel).
-    const char* ar = ac->baroRate > 100 ? "^" : (ac->baroRate < -100 ? "v" : "-");
-    if (metric) snprintf(line, sizeof(line), "V/S: %.1f m/s %s", ac->baroRate * 0.00508f, ar);
-    else        snprintf(line, sizeof(line), "V/S: %.0f ft/m %s", ac->baroRate, ar);
-    gfx->setCursor(tx, ty); gfx->print(line);
+      // Sipka stoupani/klesani za jednotku.
+      if (row == 5) {
+        const char* ar = ac->baroRate > 100 ? "^" : (ac->baroRate < -100 ? "v" : "-");
+        gfx->setTextSize(1); gfx->setTextColor(vCol);
+        gfx->setCursor(tx + vw + 3 + uw + 4, ty + 10 + (vSize == 2 ? 8 : 0));
+        gfx->print(ar);
+      }
+
+      ty += PANEL_ROW_H;
+    }
   }
 
-  // Napoveda k ovladani (v panelu uz nejsou zadna tlacitka).
-  gfx->drawFastHLine(x0 + 4, 200, PANEL_W - 8, C_GRAY);
-  gfx->setTextSize(1); gfx->setTextColor(C_GRAY);
-  gfx->setCursor(tx, 208); gfx->print("Tap na letadlo");
-  gfx->setCursor(tx, 220); gfx->print("= zafixovat");
-  gfx->setCursor(tx, 236); gfx->print("Dlouhy stisk");
-  gfx->setCursor(tx, 248); gfx->print("= dalsi obrazovka");
+  // --- Odkud a kam leti (adsbdb.com) ---
+  //
+  // Pta se jen na VYBRANE letadlo, ne na cely seznam, a odpoved se kesuje.
+  // Spousta letu zadnou trasu v databazi nema (vseobecne letectvi, vojaci,
+  // vrtulniky) - to je normalni vysledek, ne chyba, a proste se nic neukaze.
+  //
+  // Do panelu sirokeho 124 px se vejde 20 znaku pri velikosti 1, takze se
+  // kresli kody letist (PRG, LHR), ne cele nazvy mest.
+  gfx->drawFastHLine(x0 + 4, PANEL_SEP_Y, PANEL_W - 8, C_GRAY);
+  {
+    int ry = PANEL_SEP_Y + 8;
+    const RouteState rs = Route_GetState();
+    if (rs == ROUTE_WAIT) {
+      gfx->setTextSize(1); gfx->setTextColor(C_DKGRAY);
+      gfx->setCursor(tx, ry); gfx->print("zjistuji trasu...");
+      ry += 14;
+    } else if (rs == ROUTE_OK) {
+      const RouteInfo* rt = Route_Get();
+      char line[32];
+      gfx->setTextSize(1);
+      if (rt->from[0]) {
+        gfx->setTextColor(C_WHITE);
+        snprintf(line, sizeof(line), "Z:  %s", rt->from);
+        gfx->setCursor(tx, ry); gfx->print(line); ry += 13;
+      }
+      if (rt->to[0]) {
+        gfx->setTextColor(C_WHITE);
+        snprintf(line, sizeof(line), "Do: %s", rt->to);
+        gfx->setCursor(tx, ry); gfx->print(line); ry += 13;
+      }
+      if (rt->reg[0]) {
+        gfx->setTextColor(C_GRAY);
+        gfx->setCursor(tx, ry); gfx->print(rt->reg); ry += 13;
+      }
+    }
+
+    // Napoveda k ovladani se kresli az pod trasou a jen kdyz na ni zbylo misto -
+    // trasa je informace, napoveda jen pripominka.
+    if (ry <= 268) {
+      gfx->setTextSize(1); gfx->setTextColor(C_DKGRAY);
+      gfx->setCursor(tx, ry + 4);  gfx->print("Tap = zafixovat");
+      gfx->setCursor(tx, ry + 17); gfx->print("Dlouhy stisk =");
+      gfx->setCursor(tx, ry + 29); gfx->print("dalsi obrazovka");
+    }
+  }
 
   // Hodiny z NTP - v panelu je na ne misto a hodi se u meteoradaru.
   struct tm tmNow;
@@ -345,9 +481,6 @@ static void drawPanel(const Aircraft* ac, float distKmVal, bool pinned, bool sta
     snprintf(hm, sizeof(hm), "%02d:%02d", tmNow.tm_hour, tmNow.tm_min);
     UI_TextCenteredIn(hm, x0, PANEL_W, 282, C_WHITE, 2);
   }
-
-  gfx->setTextSize(1); gfx->setTextColor(C_GRAY);
-  gfx->setCursor(tx, LCD_HEIGHT - 12); gfx->print("laskakit.cz");
 }
 
 // Legenda barev letadel podle letove hladiny (vlevo na mape).
@@ -391,29 +524,58 @@ static void drawCompassMarks() {
   }
 }
 
-// Zony, kam letadla nekreslime (prekryvala by legendu, rozsah a tecky navigace).
-static bool inReservedZone(int sx, int sy) {
-  if (sx < 70 && sy < 112) return true;                  // pocet letadel + legenda
-  if (sx < 58 && sy > 286) return true;                  // rozsah + indikator
-  if (sx > 196 && sx < 284 && sy > 292) return true;      // tecky prepinani obrazovek
-  return false;
+// Pevne prvky obrazovky. Rezervuji se PRED kreslenim letadel, takze cokoli
+// umisteneho daty (letadlo, volaci znak) uz jen narokuje zbytek - a kdyz je
+// misto zabrane, nekresli se vubec. Pulka volaciho znaku pod legendou je horsi
+// nez zadny volaci znak.
+//
+// Do 0.3.0 to delala funkce inReservedZone() se ctyrmi zadratovanymi
+// obdelniky. Layout je totez, jen jsou souradnice odvozene od tychz konstant,
+// podle kterych se ty prvky opravdu kresli - takze se to nemuze rozejit.
+static void reserveChrome() {
+  Layout_Begin();
+  Layout_Reserve(LY_STATUS_X, LY_STATUS, LY_STATUS_W, LY_CHAR_H(1));
+  Layout_Reserve(LY_LEGEND_X, LY_LEGEND, LY_LEGEND_W, LY_LEGEND_H);
+  Layout_Reserve(LY_RANGE_X, LY_RANGE, LY_RANGE_W, LY_CHAR_H(1));
+  Layout_Reserve(LY_RANGE_DOTS_X, LY_RANGE_DOTS_Y0, LY_RANGE_DOTS_W, LY_RANGE_DOTS_H);
+  Layout_Reserve(LY_DOTS_X, LY_DOTS_Y0, LY_DOTS_W, LY_DOTS_H);
+  // Pravy panel s detailem - letadla do nej nikdy nezasahuji.
+  Layout_Reserve(MAP_W, 0, PANEL_W, LCD_HEIGHT);
 }
 
 void ScreenPlanes_Draw() {
   refreshRotation();
+  reserveChrome();          // pevne prvky driv nez cokoli umistene daty
   gfx->fillScreen(C_BLACK);
   float range = currentRange();
   const double clat = Settings_Lat(), clon = Settings_Lon();
 
-  // --- Podkres: obrys CR + mesta (stejna projekce jako letadla) ---
-  CzBorder_Draw(cityProject, C_GRAY);
+  // --- Podkres: hranice a mesta (stejna projekce jako letadla) ---
+  //
+  // Od 0.6.0 to jsou data cele Evropy (31 tisic bodu hranic, 1100 mest) misto
+  // samotneho obrysu CR - podkres tim padem funguje i u hranic a v zahranici.
+  // Aby to slo kreslit dost rychle, spocita se nejdriv VYREZ, ktery vubec muze
+  // byt videt, a EuBorder vsechno ostatni zahodi jeste pred sahnutim do
+  // framebufferu. Radar ma polomer `range` km, takze viditelny rozsah je
+  // `range` na kazdou stranu; dvacetiprocentni rezerva zaridi, ze se zahodi
+  // ani cara, ktera jen prochazi rohem.
+  const float marginKm = range * 1.2f;
+  const float dLat = marginKm / 111.0f;
+  const float dLon = marginKm / (111.0f * cosf((float)clat * 0.0174532925f));
+  const float lat0 = (float)clat - dLat, lat1 = (float)clat + dLat;
+  const float lon0 = (float)clon - dLon, lon1 = (float)clon + dLon;
+
+  EuBorder_Draw(cityProject, C_GRAY, lat0, lat1, lon0, lon1);
   {
-    bool showFull  = (range <= 25.0f);
-    bool showSmall = (range <= 50.0f);
+    // S rostoucim rozsahem prezije mene mest - jinak by husta oblast (Poruri,
+    // Horni Slezsko) pohrbila provoz pod zdi popisku.
+    bool showFull = (range <= 25.0f);
+    uint8_t maxTier = (range <= 50.0f) ? 3 : 2;
     // Polomer tak, aby mesta zustala v mapovem okne a nezasahla do panelu.
     int cityRad = MAP_H / 2 - 2;
-    CzBorder_DrawCities(cityProject, MAP_CX, MAP_CY, cityRad,
-                        C_DKGRAY, C_GRAY, showFull, showSmall);
+    EuBorder_DrawCities(cityProject, MAP_CX, MAP_CY, cityRad,
+                        C_DKGRAY, C_GRAY, showFull, maxTier,
+                        lat0, lat1, lon0, lon1);
   }
 
   // --- Kruhy rozsahu + zamerny kriz na poloze uzivatele ---
@@ -435,8 +597,8 @@ void ScreenPlanes_Draw() {
   }
 
   // Letadlo do detailu: rucne vybrane (dle ICAO), jinak automaticky nejblizsi.
-  int selIdx = (s_selIcao[0]) ? ADSB_FindByIcao(s_selIcao) : -1;
-  int detailIdx = (selIdx >= 0) ? selIdx : ((s_selIcao[0] && s_selCacheOk) ? -1 : nearestIdx);
+  int selIdx = (s_selHex[0]) ? ADSB_FindByHex(s_selHex) : -1;
+  int detailIdx = (selIdx >= 0) ? selIdx : ((s_selHex[0] && s_selCacheOk) ? -1 : nearestIdx);
 
   // --- Vykresleni letadel (jen v mapovem okne) ---
   int shown = 0;
@@ -446,13 +608,19 @@ void ScreenPlanes_Draw() {
     int sx, sy;
     project(list[i].lat, list[i].lon, clat, clon, range, &sx, &sy);
     if (sx < 2 || sx >= MAP_W - 2 || sy < 2 || sy >= MAP_H - 2) continue;  // mimo mapu
-    if (inReservedZone(sx, sy)) continue;   // pod legendou/rozsahem letadla nekreslime
+    // Ikona letadla je ~13 px; kdyz jeji misto neni volne, lezi pod pevnym
+    // prvkem (legenda, rozsah, tecky, panel) a nekresli se.
+    //
+    // Zamerne se jen TESTUJE, nezabira: dve letadla nad sebou se prekryvaji
+    // i ve skutecnosti a obe tam patri. Vyhradni pravo na misto potrebuji az
+    // popisky nize, ktere by jinak byly necitelne.
+    if (!Layout_IsFree(sx - 8, sy - 8, 17, 17)) continue;
 
     // Ulozit pozici + ICAO pro dotykovy vyber.
     if (s_planeN < ADSB_MAX) {
       s_planeX[s_planeN] = sx; s_planeY[s_planeN] = sy;
-      strncpy(s_planeIcao[s_planeN], list[i].icao, sizeof(s_planeIcao[0]) - 1);
-      s_planeIcao[s_planeN][sizeof(s_planeIcao[0]) - 1] = '\0';
+      strncpy(s_planeHex[s_planeN], list[i].hex, sizeof(s_planeHex[0]) - 1);
+      s_planeHex[s_planeN][sizeof(s_planeHex[0]) - 1] = '\0';
       s_planeN++;
     }
 
@@ -464,14 +632,18 @@ void ScreenPlanes_Draw() {
     float trackOnScreen = list[i].track - (float)s_topDeg;
     drawPlane(sx, sy, trackOnScreen, list[i].hasTrack, altColor(list[i].altFt));
     if (list[i].callsign[0]) {
-      int len = strlen(list[i].callsign);
-      int tw = len * 6;               // font size 1
+      const int tw = Layout_TextW(list[i].callsign, 1);
       int lx = sx - tw / 2;
       if (lx < 1) lx = 1;
       if (lx + tw > MAP_W - 2) lx = MAP_W - 2 - tw;
-      gfx->setTextSize(1); gfx->setTextColor(C_WHITE);
-      gfx->setCursor(lx, sy + 16);
-      gfx->print(list[i].callsign);
+      // Popisek se kresli, jen kdyz je pro nej misto. Pri hustem provozu se
+      // jich par vynecha - to je zamer, prekryvajici se znacky se stejne
+      // neprectou.
+      if (Layout_Claim(lx - 1, sy + 15, tw + 2, LY_CHAR_H(1) + 2)) {
+        gfx->setTextSize(1); gfx->setTextColor(C_WHITE);
+        gfx->setCursor(lx, sy + 16);
+        gfx->print(list[i].callsign);
+      }
     }
     shown++;
   }
@@ -483,7 +655,7 @@ void ScreenPlanes_Draw() {
     gfx->setCursor(4, 4); gfx->print(s_status);
   } else {
     char sub[24];
-    snprintf(sub, sizeof(sub), "%d letadel", shown);
+    snprintf(sub, sizeof(sub), "%d %s", shown, T(S_AIRCRAFT));
     gfx->setTextColor(C_CYAN);
     gfx->setCursor(4, 4); gfx->print(sub);
   }
@@ -509,12 +681,19 @@ void ScreenPlanes_Draw() {
   bool  stale = false;
   if (detailIdx >= 0) {
     det = &list[detailIdx];
-  } else if (s_selIcao[0] && s_selCacheOk) {
+  } else if (s_selHex[0] && s_selCacheOk) {
     // Grace perioda: letadlo v poslednim stazeni chybelo, ukazeme posledni
     // zname hodnoty misto toho, aby detail uskocil jinam.
     det = &s_selCache;
     stale = true;
   }
   if (det) detailDist = distKm(det->lat, det->lon, clat, clon);
-  drawPanel(det, detailDist, s_selIcao[0] != '\0', stale);
+  // Na trasu se zeptame az tady, kdyz uz je jasne, ktere letadlo je v detailu.
+  // Route_Select() je levne a idempotentni - opakovane volani s tymz volacim
+  // znakem uz nic nedela, jakmile je odpoved v kesi. Samotne stazeni probehne
+  // az v Route_Tick() z loop(), aby se odsud nesitovalo.
+  if (det) Route_Select(det->callsign, det->hex);
+  else     Route_Clear();
+
+  drawPanel(det, detailDist, s_selHex[0] != '\0', stale);
 }

@@ -7,6 +7,8 @@
 //      esp_task_wdt_reset() na neprihlasenem tasku (tichy no-op, ale vypadalo
 //      to, ze watchdog bezi),
 //    - Resume() mohl task prihlasit podruhe.
+//  Suspend()/Resume() samotne zanikly v 0.5.0 - nic uz hlavni smycku
+//  neblokuje, takze neni pred cim watchdog uspavat (viz Watchdog.h).
 //  Timeout se ridi konstantou WDT_TIMEOUT_S v Config.h.
 // =============================================================================
 #include "Watchdog.h"
@@ -38,14 +40,3 @@ void Watchdog_Feed() {
   if (s_subscribed) esp_task_wdt_reset();
 }
 
-// Pred blokujici operaci (WiFi portal), ktera si watchdog krmit neumi.
-void Watchdog_Suspend() {
-  if (s_subscribed) { esp_task_wdt_delete(NULL); s_subscribed = false; }
-}
-
-void Watchdog_Resume() {
-  if (!s_subscribed && esp_task_wdt_add(NULL) == ESP_OK) {
-    s_subscribed = true;
-    esp_task_wdt_reset();
-  }
-}

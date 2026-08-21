@@ -14,6 +14,10 @@
 #define C_WHITE  0xFFFF
 #define C_YELLOW 0xFFE0
 #define C_GRAY   0x8410
+// Svetla seda pro veci, ktere lezi na CERNEM pozadi a maji byt citelne:
+// mraky v ikonach pocasi, popisky vychodu a zapadu. C_GRAY je na cerne uz
+// dost tmava a C_DKGRAY na ni prakticky neni videt.
+#define C_LTGRAY 0xC618
 #define C_DKGRAY 0x2124
 #define C_CYAN   0x05FF
 #define C_ORANGE 0xFC00
@@ -32,6 +36,15 @@ void UI_TextCentered(const char* text, int cy, uint16_t color, uint8_t size);
 // Vycentrovany text v obdelniku [x, x+w) - pouziva se pro texty nad mapou.
 void UI_TextCenteredIn(const char* text, int x, int w, int cy,
                        uint16_t color, uint8_t size);
+
+// Vycentrovany text s NEPRUHLEDNYM pozadim.
+//
+// Vestaveny font kresli jen samotne pixely pisma, takze cara vedouci pod
+// textem prochazi skrz a text prestane byt citelny. Tahle varianta vypise
+// text i s podkladem, takze si kolem sebe udela misto - pouziva to obrazovka
+// hodin, pres kterou vede beh sekund.
+void UI_TextCenteredBg(const char* text, int cy, uint16_t color, uint16_t bg,
+                       uint8_t size);
 
 // Vykresli WiFi QR kod (pro pripojeni k AP). open=true -> sit bez hesla.
 void UI_DrawWifiQR(const char* ssid, const char* password, bool open,

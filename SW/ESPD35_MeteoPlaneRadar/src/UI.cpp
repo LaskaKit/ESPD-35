@@ -2,6 +2,7 @@
 //  ESPD35_MeteoPlaneRadar - sdilene UI utility (text, QR kod).
 // =============================================================================
 #include "UI.h"
+#include <string.h>
 #include <qrcode.h>          // knihovna "QRCode" (ricmoo) z Library Manageru
 
 void UI_TextCentered(const char* text, int cy, uint16_t color, uint8_t size) {
@@ -49,4 +50,13 @@ void UI_DrawWifiQR(const char* ssid, const char* password, bool open,
       }
     }
   }
+}
+
+void UI_TextCenteredBg(const char* text, int cy, uint16_t color, uint16_t bg,
+                       uint8_t size) {
+  const int w = (int)strlen(text) * 6 * size;
+  gfx->setTextSize(size);
+  gfx->setTextColor(color, bg);      // dvouargumentova varianta = s podkladem
+  gfx->setCursor((LCD_WIDTH - w) / 2, cy);
+  gfx->print(text);
 }

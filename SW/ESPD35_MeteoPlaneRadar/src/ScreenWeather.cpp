@@ -8,11 +8,14 @@
 //  aby se animace nepresekavala. Behem stahovani "Nacitam animaci...".
 // =============================================================================
 #include "ScreenWeather.h"
+#include "EuBorder.h"
+#include "Lang.h"
+#include "Layout.h"
 #include "CHMU.h"
 #include "Settings.h"
 #include "UI.h"
 #include "Config.h"
-#include "CzBorder.h"
+#include "EuBorder.h"
 
 #include <WiFi.h>
 #include <PNGdec.h>
@@ -26,6 +29,17 @@ static const float RANGES_KM[] = METEO_RANGES_KM;
 static const int   RANGE_COUNT = sizeof(RANGES_KM) / sizeof(RANGES_KM[0]);
 static int s_rangeIdx = 1;
 static float currentRange() { return RANGES_KM[s_rangeIdx]; }
+
+// Rozsah 0 je zvlastni: znamena PEVNY pohled na celou CR bez ohledu na to,
+// kde uzivatel je (viz CZ_VIEW_* v Config.h). Zadava se jako stred + polomer,
+// ne jako obdelnik, protoze obrazek CHMU ma na kazde ose jine meritko - ram,
+// ktery vypada ctvercove v pixelech, ctvercovy NA ZEMI neni a stat by se
+// svisle protahl. Pruchodem tymz vypoctem jako u ostatnich rozsahu zustane
+// meritko poctive.
+static bool  wholeCountry()  { return currentRange() <= 0.0f; }
+static double viewLat()      { return wholeCountry() ? (double)CZ_VIEW_LAT : Settings_Lat(); }
+static double viewLon()      { return wholeCountry() ? (double)CZ_VIEW_LON : Settings_Lon(); }
+static float  viewRadiusKm() { return wholeCountry() ? CZ_VIEW_RADIUS_KM : currentRange(); }
 
 // POZNAMKA: meteoradar se zamerne NEOTACI podle nastaveni "Nahore". Srazkova
 // mapa se cte severem nahoru a orientaci v ni drzi obrys CR. Otoceni plati jen
@@ -141,7 +155,7 @@ static bool rebuildCrops() {
   }
   if (!s_lineBuf) { s_frameCount = 0; return false; }
 
-  makeCrop(Settings_Lat(), Settings_Lon(), currentRange());
+  makeCrop(viewLat(), viewLon(), viewRadiusKm());
   int need = cropW() * cropH();
 
   int okc = 0;
@@ -218,9 +232,10 @@ static void drawOverlay() {
   }
 
   // Rozsah + indikator (vlevo dole) s podkladem.
-  gfx->fillRect(2, LCD_HEIGHT - 26, 64, 24, C_BLACK);
+  gfx->fillRect(2, LCD_HEIGHT - 26, 72, 24, C_BLACK);
   char rbuf[16];
-  snprintf(rbuf, sizeof(rbuf), "%.0f km", currentRange());
+  if (wholeCountry()) snprintf(rbuf, sizeof(rbuf), "cela CR");
+  else                snprintf(rbuf, sizeof(rbuf), "%.0f km", currentRange());
   gfx->setTextSize(1); gfx->setTextColor(C_YELLOW);
   gfx->setCursor(4, LCD_HEIGHT - 22); gfx->print(rbuf);
   int dotGap = 14, dotY = LCD_HEIGHT - 8, startX = 8;
@@ -290,9 +305,21 @@ bool ScreenWeather_Tick() {
 void ScreenWeather_Draw() {
   gfx->fillScreen(C_BLACK);
 
+  // Pevne prvky se rezervuji driv, nez EuBorder zacne narokovat misto pro
+  // nazvy mest - popisek pod legendou nebo pod teckami by byl necitelny.
+  // Souradnice odpovidaji PRESNE podkladovym obdelnikum, ktere kresli
+  // drawOverlay() nize - kdyby se rozesly, Layout by hlidal jine misto, nez
+  // se doopravdy kresli. (Prvni verze tady mela pruh pres celou sirku pro
+  // indikator snimku a prilis velkou legendu; obojí hlasil test jako prekryv.)
+  Layout_Begin();
+  Layout_Reserve(LY_DOTS_X, LY_DOTS_Y0, LY_DOTS_W, LY_DOTS_H);  // tecky obrazovek
+  Layout_Reserve(2, LCD_HEIGHT - 26, 72, 24);        // rozsah VCETNE svych tecek
+  Layout_Reserve(2, 2, 96, 92);                      // legenda intenzity
+  Layout_Reserve(LCD_WIDTH / 2 - 52, 2, 104, 30);    // indikator snimku (horni stred)
+
   if (s_frameCount == 0) {
     UI_TextCentered("Meteoradar CHMU", LCD_HEIGHT / 2 - 20, C_WHITE, 2);
-    UI_TextCentered(s_wide ? "snimek moc siroky" : s_status.c_str(), LCD_HEIGHT / 2 + 6, C_YELLOW, 2);
+    UI_TextCentered(s_wide ? T(S_FRAME_WIDE) : s_status.c_str(), LCD_HEIGHT / 2 + 6, C_YELLOW, 2);
     return;
   }
 
@@ -300,14 +327,26 @@ void ScreenWeather_Draw() {
   s_crop565 = s_frame565[f];
   blitCrop();
 
-  CzBorder_Draw(borderProject, C_GRAY);
+  // Vyrez, ktery vubec muze byt videt - EuBorder podle nej zahodi zbytek
+  // evropskych dat jeste pred sahnutim do framebufferu.
   {
-    int radius = (int)sqrtf((float)(LCD_WIDTH/2)*(LCD_WIDTH/2) + (float)(LCD_HEIGHT/2)*(LCD_HEIGHT/2)) + 2;
-    float rng = currentRange();
-    bool showFull  = (rng <= 50.0f);
-    bool showSmall = (rng <= 100.0f);
-    CzBorder_DrawCities(borderProject, LCD_WIDTH / 2, LCD_HEIGHT / 2, radius,
-                        C_WHITE, C_CYAN, showFull, showSmall);
+    const float rng = viewRadiusKm();
+    const double clat = viewLat(), clon = viewLon();
+    const float marginKm = rng * 1.2f;
+    const float dLat = marginKm / 111.0f;
+    const float dLon = marginKm / (111.0f * cosf((float)clat * 0.0174532925f));
+    const float lat0 = (float)clat - dLat, lat1 = (float)clat + dLat;
+    const float lon0 = (float)clon - dLon, lon1 = (float)clon + dLon;
+
+    EuBorder_Draw(borderProject, C_GRAY, lat0, lat1, lon0, lon1);
+
+    int radius = (int)sqrtf((float)(LCD_WIDTH/2)*(LCD_WIDTH/2) +
+                            (float)(LCD_HEIGHT/2)*(LCD_HEIGHT/2)) + 2;
+    bool showFull = (rng <= 50.0f);
+    uint8_t maxTier = (rng <= 100.0f) ? 3 : 2;
+    EuBorder_DrawCities(borderProject, LCD_WIDTH / 2, LCD_HEIGHT / 2, radius,
+                        C_WHITE, C_CYAN, showFull, maxTier,
+                        lat0, lat1, lon0, lon1);
   }
 
   drawOverlay();

@@ -79,9 +79,8 @@
 #define RST_X    (BTN_X + (BTN_W - RST_W) / 2)   // stred stejny jako u tlacitek
 #define RST_Y    248                             // 60 px pod tlacitkem OTA
 
-static bool s_wantsPortal = false;
-static bool s_wantsOTA    = false;
-static bool s_wantsReset  = false;
+static bool s_wantsWifiReset = false;
+static bool s_wantsReset     = false;
 
 // Stav potvrzeni tovarniho resetu (viz ScreenSettings.h).
 static bool          s_resetArmed   = false;
@@ -118,10 +117,8 @@ bool ScreenSettings_Tick() {
   return false;
 }
 
-bool ScreenSettings_WantsPortal() { return s_wantsPortal; }
-void ScreenSettings_ClearPortal() { s_wantsPortal = false; }
-bool ScreenSettings_WantsOTA()    { return s_wantsOTA; }
-void ScreenSettings_ClearOTA()    { s_wantsOTA = false; }
+bool ScreenSettings_WantsWifiReset() { return s_wantsWifiReset; }
+void ScreenSettings_ClearWifiReset() { s_wantsWifiReset = false; }
 bool ScreenSettings_WantsReset()  { return s_wantsReset; }
 void ScreenSettings_ClearReset()  { s_wantsReset = false; s_resetArmed = false; }
 
@@ -133,7 +130,6 @@ bool ScreenSettings_HitsControl(int x, int y) {
   }
   if (inRect(x, y, UNITS_X, UNITS_Y, UNITS_W, UNITS_H)) return true;
   if (inRect(x, y, BTN_X, WIFI_Y, BTN_W, BTN_H)) return true;
-  if (inRect(x, y, BTN_X, OTA_Y,  BTN_W, BTN_H)) return true;
   if (inRect(x, y, RST_X, RST_Y,  RST_W, RST_H)) return true;
   return false;
 }
@@ -171,15 +167,18 @@ bool ScreenSettings_HandleTap(int x, int y) {
     return true;
   }
 
-  // --- WiFi + poloha (AP portal) ---
+  // --- Znovu nastavit WiFi ---
+  //
+  // Zahodi ulozenou sit, vyvesi pristupovy bod a ceka, dokud uzivatel nezada
+  // novou sit - zadny casovy limit. Obsluha je v .ino (WiFi_Reset), ktere
+  // rovnou nakresli obrazovku s QR kodem.
+  //
+  // Nazev prosel dvema pokusy. "Zapomenout WiFi" popisovalo jen pulku deje
+  // (uzivatel nevedel, ze se tim otevre portal) a "Zapnout AP" zase mluvilo
+  // technickym zargonem o prostredku misto o vysledku. "Znovu nastavit WiFi"
+  // rika, co uzivatel dostane.
   if (inRect(x, y, BTN_X, WIFI_Y, BTN_W, BTN_H)) {
-    s_wantsPortal = true;
-    return true;
-  }
-
-  // --- Aktualizace firmwaru pres WiFi ---
-  if (inRect(x, y, BTN_X, OTA_Y, BTN_W, BTN_H)) {
-    s_wantsOTA = true;
+    s_wantsWifiReset = true;
     return true;
   }
 
@@ -242,7 +241,14 @@ void ScreenSettings_Draw() {
   // ------------------------------- LEVY SLOUPEC -----------------------------
   // Jas
   gfx->setTextSize(1); gfx->setTextColor(C_WHITE);
-  gfx->setCursor(SL_X, 46); gfx->print("Jas");
+  // Ktera uroven se prave nastavuje. Pri zapnute automatice se to behem dne
+  // meni samo, takze bez tohohle popisku uzivatel nevi, co posuvnikem hybe -
+  // a divi se, ze mu vecer "nedrzi" hodnota nastavena rano.
+  gfx->setCursor(SL_X, 46);
+  if (Settings_NightAuto())
+    gfx->print(Settings_IsNight() ? "Jas (noc, automaticky)" : "Jas (den, automaticky)");
+  else
+    gfx->print(Settings_IsNight() ? "Jas (noc)" : "Jas (den)");
   {
     int pct = Settings_Backlight();
     gfx->drawRoundRect(SL_X, SL_Y, SL_W, SL_H, 4, C_GRAY);
@@ -293,13 +299,24 @@ void ScreenSettings_Draw() {
     gfx->setCursor(BTN_X, 74); gfx->print(WiFi_IP());
   }
 
-  drawButton(BTN_X, WIFI_Y, BTN_W, BTN_H, C_YELLOW, "WiFi + poloha (AP)", 1);
-  drawButton(BTN_X, OTA_Y,  BTN_W, BTN_H, C_GREEN,  "Firmware update (OTA)", 1);
+  drawButton(BTN_X, WIFI_Y, BTN_W, BTN_H, C_YELLOW, "Znovu nastavit WiFi", 1);
 
-  gfx->setTextSize(1); gfx->setTextColor(C_GRAY);
-  gfx->setCursor(BTN_X, 200); gfx->print("Prepnuti obrazovky: klepnuti na");
-  gfx->setCursor(BTN_X, 214); gfx->print("tecky dole, nebo dlouhy stisk");
-  gfx->setCursor(BTN_X, 228); gfx->print("v leve / prave polovine.");
+  // Kde najit zbytek nastaveni. Neni to tlacitko - je to adresa, kterou si ma
+  // uzivatel opsat. Aktualizace firmwaru, poloha, filtry, obrazovky i zaloha
+  // jsou od 0.5.0 tam, protoze na 480x320 se to ovladat prstem neda.
+  {
+    gfx->setTextSize(1); gfx->setTextColor(C_GRAY);
+    gfx->setCursor(BTN_X, OTA_Y + 2);  gfx->print("Vsechno ostatni nastaveni");
+    gfx->setCursor(BTN_X, OTA_Y + 16); gfx->print("(vcetne aktualizace firmwaru)");
+    gfx->setCursor(BTN_X, OTA_Y + 30); gfx->print("v prohlizeci na adrese:");
+    gfx->setTextColor(C_CYAN);
+    gfx->setCursor(BTN_X, OTA_Y + 48);
+    if (WiFi_IsConnected()) gfx->print("http://" WEB_HOSTNAME ".local/");
+    else                    gfx->print("http://" PORTAL_IP "/");
+    gfx->setTextColor(C_DKGRAY);
+    gfx->setCursor(BTN_X, OTA_Y + 62);
+    if (WiFi_IsConnected()) { gfx->print("nebo http://"); gfx->print(WiFi_IP()); }
+  }
 
   // --- Tovarni reset ---
   // Mensi nez ostatni tlacitka a odsazeny, aby na nej nesla trefit ruka
