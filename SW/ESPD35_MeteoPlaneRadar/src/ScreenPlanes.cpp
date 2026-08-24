@@ -200,6 +200,13 @@ void ScreenPlanes_Enter() {
 
 bool ScreenPlanes_Tick() {
   if (WiFi.status() != WL_CONNECTED) { s_status = "Ceka na WiFi"; return false; }
+
+  // Odpoved na trasu prijde nezavisle na stahovani letadel, obvykle do vteriny
+  // po klepnuti. Bez tohohle by se dokreslila az s pristim pollem, tedy podle
+  // rozsahu o nekolik sekund pozdeji, a panel by mezitim zbytecne ukazoval
+  // "zjistuji trasu...". Ctenim priznak zhasne, takze se prekresli jednou.
+  bool routeChanged = Route_TakeChanged();
+
   if (millis() >= s_nextFetch) {
     s_status = "Stahuji...";
     s_dataOk = ADSB_Fetch(Settings_Lat(), Settings_Lon(), currentRange());
@@ -233,7 +240,7 @@ bool ScreenPlanes_Tick() {
     s_nextFetch = millis() + (s_dataOk ? period : period * 2);
     return true;
   }
-  return false;
+  return routeChanged;   // jinak kreslit jen kdyz dorazila trasa
 }
 
 void ScreenPlanes_ChangeRange(int dir) {
@@ -289,6 +296,12 @@ bool ScreenPlanes_HandleTap(int x, int y) {
 #define PANEL_ROW_H   29
 #define PANEL_SEP_Y  236
 
+// Orizne radek na maxCh znaku a konec oznaci teckou, at nic nepretece do mapy.
+static void clipTo(char* s, int maxCh) {
+  if (maxCh < 2) return;
+  if ((int)strlen(s) > maxCh) { s[maxCh - 1] = '.'; s[maxCh] = '\0'; }
+}
+
 static void drawPanel(const Aircraft* ac, float distKmVal, bool pinned, bool stale) {
   const int x0 = MAP_W;
   gfx->fillRect(x0, 0, PANEL_W, LCD_HEIGHT, C_DKGRAY);     // pozadi panelu
@@ -326,7 +339,11 @@ static void drawPanel(const Aircraft* ac, float distKmVal, bool pinned, bool sta
     // Volacka (nadpis). Pri size 2 se do panelu vejde 9 znaku.
     gfx->setTextSize(2); gfx->setTextColor(C_YELLOW);
     gfx->setCursor(tx, 18);
-    gfx->print(ac->callsign[0] ? ac->callsign : "?");
+    // Bez volacky se ukaze ICAO adresa. Ten zaloznik zije TADY a nikde jinde -
+    // Aircraft::callsign se schvalne necha prazdny, protoze prave on jde do
+    // dotazu na trasu a hex tam ctou jako cislo letu (viz copyCallsign
+    // v ADSB.cpp). Vykreslit ho je neskodne, ptat se na nej ne.
+    gfx->print(ac->callsign[0] ? ac->callsign : (ac->hex[0] ? ac->hex : "?"));
 
     // ICAO hex - podle nej se letadlo drzi mezi stazenimi.
     gfx->setTextSize(1); gfx->setTextColor(C_GRAY);
@@ -428,14 +445,17 @@ static void drawPanel(const Aircraft* ac, float distKmVal, bool pinned, bool sta
     }
   }
 
-  // --- Odkud a kam leti (adsbdb.com) ---
+  // --- Odkud a kam leti (adsb.lol) ---
   //
   // Pta se jen na VYBRANE letadlo, ne na cely seznam, a odpoved se kesuje.
-  // Spousta letu zadnou trasu v databazi nema (vseobecne letectvi, vojaci,
-  // vrtulniky) - to je normalni vysledek, ne chyba, a proste se nic neukaze.
+  // Spousta letu zadnou trasu nema (vseobecne letectvi, vojaci, vrtulniky)
+  // a spousta letadel nevysila volacku - oboji je normalni vysledek, ne chyba,
+  // a proste se nic neukaze. Navic server trasu overuje proti poloze letadla,
+  // takze ta, ktera k mistu nesedi, sem uz vubec nedojde.
   //
-  // Do panelu sirokeho 124 px se vejde 20 znaku pri velikosti 1, takze se
-  // kresli kody letist (PRG, LHR), ne cele nazvy mest.
+  // Do panelu sirokeho 124 px se vejde 20 znaku pri velikosti 1. adsb.lol vraci
+  // nazvy mest ("Prague"), ktere se ctou lip nez kody, ale "Frankfurt am Main"
+  // by pretekl do mapy - dlouhy nazev se proto orizne teckou.
   gfx->drawFastHLine(x0 + 4, PANEL_SEP_Y, PANEL_W - 8, C_GRAY);
   {
     int ry = PANEL_SEP_Y + 8;
@@ -448,20 +468,26 @@ static void drawPanel(const Aircraft* ac, float distKmVal, bool pinned, bool sta
       const RouteInfo* rt = Route_Get();
       char line[32];
       gfx->setTextSize(1);
+      // Pri velikosti 1 je znak 6 px siroky, panel ma PANEL_W - 8 px na text.
+      const int maxCh = (PANEL_W - 8) / 6;
       if (rt->from[0]) {
         gfx->setTextColor(C_WHITE);
         snprintf(line, sizeof(line), "Z:  %s", rt->from);
+        clipTo(line, maxCh);
         gfx->setCursor(tx, ry); gfx->print(line); ry += 13;
       }
       if (rt->to[0]) {
         gfx->setTextColor(C_WHITE);
         snprintf(line, sizeof(line), "Do: %s", rt->to);
+        clipTo(line, maxCh);
         gfx->setCursor(tx, ry); gfx->print(line); ry += 13;
       }
-      if (rt->reg[0]) {
-        gfx->setTextColor(C_GRAY);
-        gfx->setCursor(tx, ry); gfx->print(rt->reg); ry += 13;
-      }
+    }
+    // Registrace pod trasou. Uz nechodi z databaze trasy, ale primo z adsb.fi
+    // (pole "r"), takze se ukaze i u letadla, ktere zadnou trasu nema.
+    if (ac && ac->reg[0]) {
+      gfx->setTextSize(1); gfx->setTextColor(C_GRAY);
+      gfx->setCursor(tx, ry); gfx->print(ac->reg); ry += 13;
     }
 
     // Napoveda k ovladani se kresli az pod trasou a jen kdyz na ni zbylo misto -
@@ -692,7 +718,10 @@ void ScreenPlanes_Draw() {
   // Route_Select() je levne a idempotentni - opakovane volani s tymz volacim
   // znakem uz nic nedela, jakmile je odpoved v kesi. Samotne stazeni probehne
   // az v Route_Tick() z loop(), aby se odsud nesitovalo.
-  if (det) Route_Select(det->callsign, det->hex);
+  // Poloha jde s dotazem: server podle ni odmitne trasu, ktera k mistu, kde
+  // letadlo opravdu je, nesedi. Prave to drive delalo z letadla nad Prahou let
+  // Atheny - Istanbul, kdyz se cislo letu recyklovalo.
+  if (det) Route_Select(det->callsign, det->lat, det->lon);
   else     Route_Clear();
 
   drawPanel(det, detailDist, s_selHex[0] != '\0', stale);

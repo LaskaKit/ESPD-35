@@ -53,7 +53,8 @@
 //
 //  Zdroje dat (nutno uvest, jen pro osobni nekomercni pouziti):
 //    - Letadla:  adsb.fi, https://adsb.fi
-//    - Trasa:    adsbdb.com, https://www.adsbdb.com
+//    - Trasa:    adsb.lol, https://adsb.lol
+//                (data tras: https://github.com/vradarserver/standing-data)
 //    - Srazky:   Cesky hydrometeorologicky ustav, https://opendata.chmi.cz
 //    - Pocasi:   Open-Meteo, https://open-meteo.com
 //    - Poloha:   ip-api.com (automaticka detekce dle IP)

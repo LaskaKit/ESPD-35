@@ -28,6 +28,11 @@ struct Aircraft {
   char  hex[8] = "";
   char  callsign[10] = "";
   char  type[10] = "";        // typ letadla (napr. A320), pokud dostupny
+  // Registrace ("OK-TVU"), z pole "r" tehoz stazeni. Vozi se zadarmo v datech,
+  // ktera stahujeme tak jako tak - proto uz neni potreba se na drak ptat druhe
+  // API. Nejdelsi realne registrace maji deset znaku, jedenact plus koncova
+  // nula tedy bohate staci.
+  char  reg[12] = "";
   // Kod odpovidace jako ctyri osmickove cislice. Drzi se jako TEXT, ne cislo:
   // 7700 je osmickovy kod a "0021" nesmi zdegenerovat na 21.
   char  squawk[6] = "";

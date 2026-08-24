@@ -88,14 +88,19 @@ static bool readFloat(JsonObjectConst o, const char* key, float* out) {
   return false;
 }
 
+// Volacka, a JEN volacka. Drive tu byl zaloznik na hex adresu, aby letadlo,
+// ktere volacku nevysila (TIS-B, MLAT, soukrome a vojenske stroje), aspon neco
+// ukazalo. To byla chyba: volacka jde do dotazu na trasu a hex adresa se po
+// normalizaci tvari jako platne cislo letu - "a31234" se zmeni na "A31234",
+// coz je Aegean Airlines 1234, takze letadlo nad Prahou hlasilo let
+// Atheny - Istanbul. Bez volacky zustava pole prazdne a na trasu se nikdo
+// nepta; kdo potrebuje neco vykreslit, sahne po hexu sam (viz ScreenPlanes).
 static void copyCallsign(Aircraft* a, JsonObjectConst plane) {
-  const char* flight = plane["flight"] | "";
-  const char* hex = plane["hex"] | "";
-  const char* src = (flight[0] != '\0') ? flight : hex;
-  while (*src == ' ') src++;   // preskoc uvodni mezery
+  const char* src = plane["flight"] | "";
+  while (*src == ' ' || *src == '\t') src++;   // adsb.fi doplnuje na osm znaku
   int i = 0;
   while (src[i] && i < (int)sizeof(a->callsign) - 1) { a->callsign[i] = src[i]; i++; }
-  while (i > 0 && a->callsign[i-1] == ' ') i--;   // orizni koncove
+  while (i > 0 && (a->callsign[i-1] == ' ' || a->callsign[i-1] == '\t')) i--;
   a->callsign[i] = '\0';
 }
 
@@ -172,7 +177,7 @@ static void buildFilter(JsonDocument& filter) {
   o["gs"]           = true;
   o["baro_rate"]    = true;
   o["t"]            = true;
-  o["type"]         = true;
+  o["r"]            = true;   // registrace - zadarmo v teze odpovedi
   o["squawk"]       = true;
 }
 
@@ -211,7 +216,13 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
       return false;
     }
     // Slusne se predstavit - bezplatne API adsb.fi o to zada.
-    http.addHeader("User-Agent", "ESPD35_MeteoPlaneRadar/1.0 (+https://chiptron.cz)");
+    // POZOR: setUserAgent(), NE addHeader(). ESP32 HTTPClient::addHeader()
+    // mlcky zahazuje Connection, Host, Accept-Encoding a prave User-Agent -
+    // vidi je jako "handled by code" a nic nenahlasi. Tahle hlavicka se tedy
+    // driv neposilala vubec a odchazela vychozi "ESP32HTTPClient"; adsb.lol na
+    // ni odpovida 403 "User-Agent too generic". Jeden retezec pro obe API je
+    // v Config.h.
+    http.setUserAgent(HTTP_USER_AGENT);
     http.addHeader("Accept", "application/json");
     // Hlavicka Date je zaloha hodin, kdyz NTP neprojde (viz Clock.h).
     http.collectHeaders(NET_DATE_HEADER, 1);
@@ -320,10 +331,19 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
       cand.altFt    = readFloat(plane, "alt_baro", &f) ? f : 0;
       cand.gsKt     = readFloat(plane, "gs", &f) ? f : 0;
       cand.baroRate = readFloat(plane, "baro_rate", &f) ? f : 0;
-      // Typ letadla (ruzne klice dle zdroje).
-      const char* ty = plane["t"] | (plane["type"] | "");
+      // Typ letadla. VYHRADNE "t" - to je kod draku ("A320"). Klic "type" je
+      // ZDROJ ZPRAVY ("adsb_icao", "mlat", "tisb_icao") a jako zaloha to bylo
+      // spatne: letadla, u kterych adsb.fi drak nezna, ukazovala v detailu
+      // "adsb_icao" misto typu. Radsi prazdno nez nesmysl - radek se pak
+      // proste nevykresli.
+      const char* ty = plane["t"] | "";
       strncpy(cand.type, ty, sizeof(cand.type) - 1);
       cand.type[sizeof(cand.type) - 1] = '\0';
+      // Registrace, stejna vec - "r" prijde v teze odpovedi, takze na "OK-TVU"
+      // vedle typu neni potreba zadne druhe API.
+      const char* rg = plane["r"] | "";
+      strncpy(cand.reg, rg, sizeof(cand.reg) - 1);
+      cand.reg[sizeof(cand.reg) - 1] = '\0';
       // ICAO hex - stabilni identifikator (nemeni se mezi stazenimi).
       const char* hx = plane["hex"] | "";
       strncpy(cand.hex, hx, sizeof(cand.hex) - 1);

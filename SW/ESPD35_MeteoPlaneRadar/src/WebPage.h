@@ -223,7 +223,7 @@ section[hidden]{display:none}
   Data: <a style="color:var(--acc)" href="https://adsb.fi">adsb.fi</a> ·
   <a style="color:var(--acc)" href="https://opendata.chmi.cz">ČHMÚ</a> ·
   <a style="color:var(--acc)" href="https://open-meteo.com">Open-Meteo</a> ·
-  <a style="color:var(--acc)" href="https://www.adsbdb.com">adsbdb</a><br>
+  <a style="color:var(--acc)" href="https://adsb.lol">adsb.lol</a><br>
   Jen pro osobní nekomerční použití.
 </p>
 </main>

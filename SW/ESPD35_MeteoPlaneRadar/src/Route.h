@@ -1,47 +1,67 @@
 // =============================================================================
 //  ESPD35_MeteoPlaneRadar
-//  Where the selected aircraft is flying from and to (adsbdb.com).
+//  Kam vybrane letadlo leti - trasa z adsb.lol.
 //
-//  adsb.fi carries positions but no route, so this has to come from elsewhere.
-//  adsbdb.com is a free lookup database, no key, no registration: callsign ->
-//  departure and arrival airport, ICAO hex -> registration, type and operator.
+//  adsb.fi vozi polohy, ale ne trasu, takze ta musi prijit odjinud. Drive se
+//  pouzivala ciste staticka databaze planovanych tras: jeden radek na callsign,
+//  bez data a bez vazby na konkretni let. Callsigny se ale mezi rotacemi a
+//  sezonami recykluji, takze letadlo nad Prahou dostalo klidne trasu
+//  Atheny -> Istanbul a nebylo jak poznat, ze je spatne.
 //
-//  It is asked ONLY when the user opens an aircraft's detail - one request for
-//  one aircraft, never for the whole list - and the answer is cached, so
-//  flicking between two aircraft does not hit the API again. Plenty of flights
-//  have no route on file (general aviation, military, helicopters); that is a
-//  normal outcome, not an error, and simply shows nothing.
+//  adsb.lol umi navic jednu vec: spolu s callsignem se posila i poloha letadla
+//  a server vrati priznak "plausible". Pocita kolmou vzdalenost polohy od
+//  ortodromy mezi letisti trasy s toleranci max(50 NM, 20 % delky trasy).
+//  Trasa, ktera k poloze nesedi, se tim odfiltruje jeste na serveru.
 //
-//  Prevzato z petus/MeteoPlaneRadar v0.6.1 (autor Petr / chiptron.cz)
+//  Endpoint (bez klice, bez registrace):
+//    GET https://api.adsb.lol/api/0/route/{callsign}/{lat}/{lon}
+//
+//  Pta se ZASE jen pri otevreni detailu jednoho letadla - jeden dotaz na jedno
+//  letadlo, nikdy pro cely seznam - a odpoved se kesuje, takze prepinani mezi
+//  dvema letadly uz API nezatezuje. Spousta letu trasu nema (general aviation,
+//  vojenske stroje, vrtulniky) a spousta letadel nevysila callsign vubec; oboji
+//  je normalni stav, ne chyba, a proste se nic nezobrazi.
+//
+//  Registrace a typ letadla uz sem nepatri - oboji vozi adsb.fi ve stejne
+//  odpovedi, kterou stahujeme kvuli polohe (pole "r" a "t"), viz ADSB.h.
+//
+//  Prevzato z petus/MeteoPlaneRadar v0.6.3 (autor Petr / chiptron.cz)
 //  a upraveno pro ESPD-3.5 (ILI9488 480x320, SPI).
 // =============================================================================
 #pragma once
 #include <Arduino.h>
 
 enum RouteState : uint8_t {
-  ROUTE_IDLE = 0,   // nothing asked for
-  ROUTE_WAIT,       // queued / being fetched
-  ROUTE_OK,         // something was found
-  ROUTE_NONE        // asked, but this flight has no route on file
+  ROUTE_IDLE = 0,   // nic se nezada
+  ROUTE_WAIT,       // ve fronte / stahuje se
+  ROUTE_OK,         // trasa nalezena a server ji oznacil za verohodnou
+  ROUTE_NONE        // dotaz probehl, ale pouzitelna trasa neni
 };
 
 struct RouteInfo {
-  char from[20] = "";   // "London" or "LHR"
+  char from[20] = "";   // "Prague", pripadne "PRG" kdyz mesto chybi
   char to[20]   = "";
-  char reg[12]  = "";   // registration, e.g. EI-EJG
-  char type[20] = "";   // e.g. "A330 202"
 };
 
-// Ask about this aircraft. Cheap and idempotent: repeated calls with the same
-// callsign do nothing once the answer is in the cache. An empty callsign (many
-// aircraft do not broadcast one) only looks up the airframe by hex.
-void       Route_Select(const char* callsign, const char* hex);
+// Zeptej se na tuto trasu. Levne a idempotentni: opakovane volani se stejnym
+// callsignem nedela nic, jakmile je odpoved v kesi. Prazdny callsign (letadlo
+// zadny nevysila) dotaz vubec nespusti - hex se sem uz neposila, protoze
+// normalizovany hex je platny IATA tvar: "a31234" -> "A31234" je let Aegean
+// Airlines 1234, odtud ta recka trasa u letadla nad Prahou.
+// Poloha se posila spolu s callsignem, server podle ni pocita "plausible".
+void       Route_Select(const char* callsign, float lat, float lon);
 
-// Nothing is selected any more - stop any pending lookup.
+// Nic neni vybrano - zrus cekajici dotaz.
 void       Route_Clear();
 
-// Runs the pending lookup. Call from loop(); does nothing when there is none.
+// Provede cekajici dotaz. Vola se z loop(); bez dotazu nedela nic.
 void       Route_Tick();
 
 RouteState Route_GetState();
-const RouteInfo* Route_Get();   // valid while the state is ROUTE_OK
+const RouteInfo* Route_Get();   // platne, dokud je stav ROUTE_OK
+
+// Vrati true prave jednou po tom, co Route_Tick() dopsal vysledek, a priznak
+// tim zhasne. Obrazovka se prekresluje jen kdyz ma co ukazat noveho, a bez
+// tohohle by na odpoved cekala az na dalsi stahovani letadel - tedy podle
+// dosahu 5 az 15 sekund, i kdyz trasa dorazila hned.
+bool       Route_TakeChanged();

@@ -13,6 +13,7 @@
 // =============================================================================
 #pragma once
 #include <Arduino.h>
+#include "Version.h"   // FW_VERSION - jde do hlavicky User-Agent nize
 
 // ---------------------------------------------------------------------------
 //  Rozmery displeje (na sirku / landscape). ILI9488 je nativne 320x480,
@@ -175,6 +176,14 @@
 // Bude to potreba hlavne od verze 0.5.0, kdy na pozadi pobezi web server.
 #define NET_MIN_HEAP 60000
 
+// Hlavicka User-Agent pro VSECHNY odchozi dotazy. Neni to jen zdvorilost:
+// adsb.lol odpovi 403 s telem "User-Agent too generic; include valid contact
+// info", kdyz v ni zadny kontakt nevidi - a presne to delala vychozi
+// "ESP32HTTPClient", ktera odchazela, dokud se hlavicka omylem nastavovala
+// pres addHeader() (to ji tise zahazuje, viz ADSB.cpp). Odkaz na web projektu
+// jako kontakt staci. Kdyz projekt forknete, dejte sem SVUJ.
+#define HTTP_USER_AGENT "ESPD35_MeteoPlaneRadar/" FW_VERSION " (+https://chiptron.cz)"
+
 // ---------------------------------------------------------------------------
 //  Nouzove kody odpovidace (squawk)
 //  7500 unos, 7600 vypadek radia, 7700 obecna nouze.
@@ -306,11 +315,14 @@
 #endif
 
 // ---------------------------------------------------------------------------
-//  Trasa letu (adsbdb.com) - zdarma, bez klice, bez registrace.
+//  Trasa letu (adsb.lol) - zdarma, bez klice, bez registrace.
 //  Pta se JEN pri otevreni detailu letadla, na jedno letadlo, a odpoved se
 //  kesuje - preblikavani mezi dvema letadly uz API nezatezuje.
+//  Cela cesta je BASE/{callsign}/{lat}/{lon} - poloha jde s dotazem, aby server
+//  mohl rict, jestli trasa k mistu, kde letadlo opravdu je, vubec sedi
+//  (viz Route.h).
 // ---------------------------------------------------------------------------
-#define ROUTE_API_BASE "https://api.adsbdb.com"
+#define ROUTE_API_BASE "https://api.adsb.lol/api/0/route"
 #define ROUTE_CACHE_N  8      // zapamatovanych odpovedi
 
 // ---------------------------------------------------------------------------
