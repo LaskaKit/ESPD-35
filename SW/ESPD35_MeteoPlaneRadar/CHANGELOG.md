@@ -5,6 +5,40 @@ Verze je na jediném místě: `Version.h` (`FW_VERSION`).
 
 ---
 
+## [0.4.1]
+
+### Opraveno
+
+- **V detailu letadla se ukazovala trasa, která neodpovídala skutečnosti** —
+  třeba Atény → Istanbul u letadla nad Prahou. Sešly se tři příčiny:
+  letadlo bez volací značky poslalo do dotazu svou ICAO adresu (`a31234` se
+  normalizuje na `A31234`, což je platné číslo letu Aegean Airlines 1234),
+  zdroj tras neověřoval polohu, a u letů s mezipřistáním se ukazoval první
+  odlet a poslední přílet, i když letadlo letělo prostřední úsek.
+- **Místo typu letounu se u některých letadel ukazovalo `adsb_icao`.** To je
+  typ zprávy, ne typ draku; jako záloha se používat neměl. Když adsb.fi drak
+  nezná, řádek se teď prostě nevykreslí.
+- **Hlavička `User-Agent` se neposílala vůbec.** `HTTPClient::addHeader()` ji
+  mlčky zahazuje, takže odcházelo výchozí `ESP32HTTPClient`.
+- **Trasa se dokreslila až s dalším stažením letadel**, o několik sekund
+  později, než dorazila. Nově se objeví hned.
+- **Keš tras si odpověď pamatovala až do restartu.** Volací značky se recyklují
+  a výsledek platí k poloze, se kterou se ptalo, takže po mezipřistání
+  ukazoval pořád první úsek. Záznam teď platí 20 minut (1 minutu, když
+  trasa nebyla nalezena).
+
+### Změněno
+
+- **Trasy nově z adsb.lol** místo adsbdb.com. Spolu s volací značkou se posílá
+  i poloha letadla a server vrátí, jestli k ní trasa vůbec sedí — co neprojde,
+  se nezobrazí. U letů s mezipřistáním se vybere ten úsek, který letadlo právě
+  letí. Letadlo, které volací značku nevysílá, se na trasu neptá vůbec.
+- **Registrace a typ letounu se berou z adsb.fi** (pole `r` a `t`) ze stejné
+  odpovědi, která se stahuje kvůli polohám. Odpadl tím dotaz na druhé API
+  a registrace se ukáže i u letadla bez trasy.
+
+---
+
 ## [0.4.0]
 
 Konfigurace se přesunula do prohlížeče, přibyly hodiny a předpověď.
@@ -30,7 +64,7 @@ Konfigurace se přesunula do prohlížeče, přibyly hodiny a předpověď.
 - **Automatický noční jas** podle východu a západu slunce, s posunem ±120 min.
 - **Evropská mapa** (30 894 bodů hranic, 1 100 měst) místo obrysu ČR.
 - **Pátý rozsah meteoradaru: celá ČR** — pevný výřez státu bez ohledu na polohu.
-- **Trasa letu** (adsbdb.com) v detailu letadla: odkud, kam, registrace.
+- **Trasa letu** v detailu letadla: odkud, kam, registrace.
 - **Nouzový squawk** (7500/7600/7700) — červený pruh v detailu. Letadlo v nouzi
   se zobrazí i mimo nastavené výškové pásmo.
 - **Pět obrazovek, čtyři vypínatelné**, plus automatické střídání.
