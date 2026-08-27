@@ -5,6 +5,36 @@ Verze je na jediném místě: `Version.h` (`FW_VERSION`).
 
 ---
 
+## [0.4.2]
+
+### Opraveno
+
+- **Trasa letu se nezobrazovala.** `deserializeJson()` četl přímo
+  z `http.getStream()`, což je surový socket: když adsb.lol odpoví chunked,
+  jdou hexadecimální hlavičky bloků rovnou do parseru a ten vrátí `Ok` nad
+  prázdným dokumentem.
+- **Radar letadel mohl zůstat prázdný** ze stejné příčiny — hlavičky bloků
+  zůstávaly v těle a pole `ac` v dokumentu chybělo. Těla se nově čtou přes
+  `writeToStream()`, které chunked dekóduje.
+- **Snímek meteoradaru se mohl vykreslit poškozený**, protože stahování PNG
+  četlo socket stejným ručním způsobem.
+- **Zařízení se mohlo restartovat během TLS handshake.** Ten má vlastní limit
+  120 s, tedy šestinásobek watchdogu; nově 8 s.
+- **Stažení trasy mohlo restartovat zařízení**, protože se během něj
+  neresetoval watchdog. Přibylo `Route_SetPollFn()`.
+- **Letadlo na zemi se počítalo jako v nulové výšce.** `alt_baro` u nich nese
+  text `ground`, ze kterého `atof()` udělal 0.0 a ohlásil úspěch; nově
+  `strtof()` s koncovým ukazatelem.
+
+### Změněno
+
+- Index ČHMÚ se prohledává za běhu v klouzavém okně, takže na jeho velikosti
+  nezáleží. Odpadl i desetisekundový timeout, na který dobíhalo každé stažení.
+- Sériový výpis říká velikost indexu ČHMÚ a u nečekané odpovědi z adsb.fi
+  její `msg` a začátek těla.
+
+---
+
 ## [0.4.1]
 
 ### Opraveno
