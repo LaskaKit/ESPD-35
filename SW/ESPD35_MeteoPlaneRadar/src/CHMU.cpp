@@ -6,13 +6,15 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include "esp_heap_caps.h"
+#include "Config.h"   // NET_TLS_HANDSHAKE_S
 #include "Net.h"      // sdilene stahovani, strazce pameti, keep-alive relace
 #include "Status.h"   // jednoradkove hlaseni pro stavovou stranku
+#include "NetSink.h"  // skenovani tela za behu, bezpecne vuci chunked
+#include <string.h>   // strstr
 
 static const char* NAME_PREFIX = "pacz2gmaps3.z_max3d.";
 
 static void (*s_poll)() = nullptr;
-static void poll() { if (s_poll) s_poll(); }
 void CHMU_SetPollFn(void (*fn)()) { s_poll = fn; }
 
 // -----------------------------------------------------------------------------
@@ -79,12 +81,14 @@ size_t   CHMU_DataSize() { return s_pngSize; }
 static String s_newestTs;
 static String s_latestName;
 
-static void scanChunkLatest(const String& text) {
-  int pos = 0;
+// Bere maximum, takze jmeno videne dvakrat na hranici okna nicemu nevadi.
+static void scanChunkLatest(const char* text, void* user) {
+  (void)user;
+  const char* pos = text;
   while (true) {
-    int idx = text.indexOf(NAME_PREFIX, pos); if (idx < 0) break;
-    int end = text.indexOf(".png", idx); if (end < 0) break;
-    String name = text.substring(idx, end + 4);
+    const char* idx = strstr(pos, NAME_PREFIX); if (!idx) break;
+    const char* end = strstr(idx, ".png");      if (!end) break;
+    String name; name.concat(idx, (size_t)(end + 4 - idx));
     String ts = extractTimestamp(name);
     if (ts.length() && ts > s_newestTs) { s_newestTs = ts; s_latestName = name; }
     pos = end + 4;
@@ -94,21 +98,24 @@ static void scanChunkLatest(const String& text) {
 // -----------------------------------------------------------------------------
 //  Stazeni a proskenovani indexu CHMU
 //
-//  Vypis adresare je dlouhy, takze se nikdy nedrzi cely v pameti: cte se po
-//  kouscich do klouzaveho okna a scanner se vola prubezne. Okno se orezava na
-//  250 znaku, coz je vic nez nejdelsi nazev souboru - jmeno rozdelene mezi dve
-//  cteni se tim padem najde.
+//  Vypis adresare nema rozumnou horni mez - v srpnu 2026 pres 300 kB - takze se
+//  neuklada nikam: NetScanSink ho prozene scannerem v klouzavem okne. Proti
+//  puvodni smycce nad syrovym socketem tim pribylo dekodovani chunked a ubylo
+//  cekani; ta smycka nemela ukonceni podle delky a pri kazdem stazeni dobihala
+//  az na desetisekundovy timeout.
 //
 //  Stejnou praci potrebuji obe cesty (jeden snimek i animace), lisi se jen
-//  scannerem - proto jeden spolecny kus a ukazatel na funkci.
+//  scannerem - proto jeden spolecny kus a ukazatel na funkci. Okna se
+//  prekryvaji, takze jmeno muze dorazit dvakrat; oba scannery to snesou.
 // -----------------------------------------------------------------------------
-static bool fetchIndex(void (*scan)(const String&)) {
+static bool fetchIndex(NetScanFn scan) {
   if (WiFi.status() != WL_CONNECTED) { Status_Set(ST_RADAR, "bez WiFi"); return false; }
   if (!Net_HeapOk("CHMU")) { Status_Set(ST_RADAR, "malo pameti"); return false; }
 
   WiFiClientSecure client; client.setInsecure();
+  client.setHandshakeTimeout(NET_TLS_HANDSHAKE_S);
   HTTPClient http;
-  http.setConnectTimeout(8000);
+  http.setConnectTimeout(8000);   // jen TCP connect, NE handshake
   http.setTimeout(15000);
   if (!http.begin(client, CHMU_INDEX_URL)) { Status_Set(ST_RADAR, "begin() selhalo"); return false; }
   http.collectHeaders(NET_DATE_HEADER, 1);
@@ -122,29 +129,10 @@ static bool fetchIndex(void (*scan)(const String&)) {
   }
   Net_NoteDate(http);   // hlavicka Date je zaloha hodin (viz Clock.h)
 
-  WiFiClient* stream = http.getStreamPtr();
-  if (!stream) { http.end(); return false; }
-
-  String window;
-  uint8_t buf[512];
-  unsigned long last = millis();
-  while (http.connected()) {
-    poll();
-    size_t avail = stream->available();
-    if (avail) {
-      int n = stream->readBytes(buf, avail < sizeof(buf) ? avail : sizeof(buf));
-      if (n <= 0) break;
-      window.concat((const char*)buf, n);
-      scan(window);
-      if (window.length() > 400) window = window.substring(window.length() - 250);
-      last = millis();
-    } else {
-      if (millis() - last > 10000) break;
-      delay(1);
-    }
-  }
-  scan(window);
+  long len = Net_ScanBody(http, scan, nullptr, "CHMU", s_poll);
   http.end();
+  if (len <= 0) { Status_Set(ST_RADAR, "index se nestahl"); return false; }
+  Serial.printf("CHMU: index %ld B\n", len);
   return true;
 }
 
@@ -207,12 +195,15 @@ static void topInsert(const String& name, const String& ts) {
   }
 }
 
-static void scanChunkTop(const String& text) {
-  int pos = 0;
+// topInsert() uz drzene razitko zahodi, takze jmeno dorucene dvakrat na hranici
+// okna nezabere dva sloty.
+static void scanChunkTop(const char* text, void* user) {
+  (void)user;
+  const char* pos = text;
   while (true) {
-    int idx = text.indexOf(NAME_PREFIX, pos); if (idx < 0) break;
-    int end = text.indexOf(".png", idx); if (end < 0) break;
-    String name = text.substring(idx, end + 4);
+    const char* idx = strstr(pos, NAME_PREFIX); if (!idx) break;
+    const char* end = strstr(idx, ".png");      if (!end) break;
+    String name; name.concat(idx, (size_t)(end + 4 - idx));
     String ts = extractTimestamp(name);
     if (ts.length()) topInsert(name, ts);
     pos = end + 4;

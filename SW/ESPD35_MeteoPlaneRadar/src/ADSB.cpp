@@ -13,7 +13,9 @@
 #include <ArduinoJson.h>
 #include <math.h>
 #include <string.h>
+#include <stdlib.h>          // strtof
 #include "esp_heap_caps.h"   // PSRAM body buffer
+#include "NetSink.h"         // cteni tela bezpecne vuci chunked
 #include "Net.h"        // strazce interni pameti + hlavicka Date
 #include "Status.h"     // jednoradkove hlaseni pro stavovou stranku
 #include "Settings.h"   // vyskove pasmo, "jen s volacim znakem"
@@ -82,8 +84,17 @@ static bool readFloat(JsonObjectConst o, const char* key, float* out) {
   JsonVariantConst v = o[key];
   if (v.is<float>() || v.is<double>() || v.is<int>()) { *out = v.as<float>(); return true; }
   if (v.is<const char*>()) {
-    const char* s = v.as<const char*>();
-    if (s && *s) { *out = (float)atof(s); return true; }
+    // ArduinoJson si ciselny retezec prevede sam, jenze atof() nerozlisi
+    // chybejici hodnotu od necislne: z "ground" udelal 0.0 a ohlasil uspech.
+    // Koncovy ukazatel u strtof() ten rozdil ukaze, takze necekany literal
+    // propadne misto toho, aby se z nej stala nulova vyska.
+    const char* str = v.as<const char*>();
+    if (!str || !*str) return false;
+    char* end = nullptr;
+    float f = strtof(str, &end);
+    if (end == str) return false;
+    *out = f;
+    return true;
   }
   return false;
 }
@@ -114,6 +125,10 @@ static void copyCallsign(Aircraft* a, JsonObjectConst plane) {
 static char*  s_body    = nullptr;
 static size_t s_bodyCap = 0;
 static const size_t ADSB_MAX_BODY = 1024 * 1024;   // 1 MB tvrdy strop
+// Rezervuje se, kdyz server neposle Content-Length (chunked). Pod tvrdym
+// stropem, nad vsim, co adsb.fi realne vrati: nejsirsi nabizeny dosah je
+// 100 km, kde odpoved ma nizke desitky kB.
+static const size_t ADSB_UNKNOWN_BODY = 384 * 1024;
 
 static bool bodyReserve(size_t need) {
   if (need <= s_bodyCap) return true;
@@ -126,40 +141,24 @@ static bool bodyReserve(size_t need) {
 }
 
 // Nacte cele telo HTTP do s_body. Vraci pocet bajtu (>= 0), nebo -1 pri tvrde
-// chybe (alokace / neni stream). *complete = false, kdyz server deklaroval
-// Content-Length, ktery jsme nedostali cely (uriznute stahovani).
-static long readBody(HTTPClient& http, bool* complete) {
-  *complete = true;
-  int declared = http.getSize();              // -1 kdyz neznamy / chunked
-  if (declared > (int)ADSB_MAX_BODY) return -1;
-  WiFiClient* stream = http.getStreamPtr();
-  if (!stream) return -1;
-
-  size_t want = (declared > 0) ? (size_t)declared : 8192;
-  if (!bodyReserve(want + 1)) return -1;
-
-  size_t total = 0;
-  unsigned long last = millis();
-  while (http.connected() && (declared < 0 || total < (size_t)declared)) {
-    poll();                                    // yield + nakrmi watchdog
-    size_t avail = stream->available();
-    if (avail) {
-      if (total + avail + 1 > s_bodyCap) {
-        if (total + avail + 1 > ADSB_MAX_BODY) { *complete = false; break; }
-        if (!bodyReserve(total + avail + 1)) return -1;
-      }
-      int r = stream->readBytes(s_body + total, avail);
-      if (r <= 0) break;
-      total += r;
-      last = millis();
-    } else {
-      if (millis() - last > 8000) break;       // zaseknuto uprostred prenosu
-      delay(2);
-    }
+// chybe: alokace, preteceni, zaseknuti nebo prenos ukonceny driv, nez slibovala
+// deklarovana delka.
+static long readBody(HTTPClient& http) {
+  // writeToStream() dekoduje chunked; rucni smycka nad getStreamPtr() ne, a
+  // presne proto zustavaly velikosti bloku v tele.
+  int declared = http.getSize();               // -1 kdyz chunked / neznamy
+  if (declared > (int)ADSB_MAX_BODY) {
+    Serial.printf("ADSB: hlaseno %d B, strop je %u B\n",
+                  declared, (unsigned)ADSB_MAX_BODY);
+    return -1;
   }
-  if (s_body) s_body[total] = '\0';
-  if (declared > 0 && total < (size_t)declared) *complete = false;
-  return (long)total;
+  // Sink zapisuje do pevneho bufferu a neumi ho zvetsit uprostred prenosu,
+  // takze chunked odpoved musi dostat misto dopredu. Buffer lezi v PSRAM a
+  // recykluje se mezi stazenimi, takze ta rezerva nic nestoji.
+  size_t want = (declared > 0) ? (size_t)declared + 1 : ADSB_UNKNOWN_BODY;
+  if (!bodyReserve(want)) return -1;
+
+  return Net_ReadBody(http, (uint8_t*)s_body, s_bodyCap, "ADSB", s_poll);
 }
 
 // Filtr: parsuji se jen klice, ktere pouzivame, takze JsonDocument zustava maly
@@ -179,6 +178,12 @@ static void buildFilter(JsonDocument& filter) {
   o["t"]            = true;
   o["r"]            = true;   // registrace - zadarmo v teze odpovedi
   o["squawk"]       = true;
+
+  // Neni to uzitecny obsah, ale diagnostika: adsb.fi dava svuj stavovy text do
+  // "msg" ("No error" pri uspechu). Filtr ho driv zahazoval, takze firmware
+  // umel rict jen "chybi pole ac" a nic o tom proc. Prida se az nakonec -
+  // pridani klice muze zneplatnit JsonObject vzaty vyse.
+  filter["msg"] = true;
 }
 
 bool ADSB_Fetch(double lat, double lon, float radiusKm) {
@@ -205,9 +210,10 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
     poll();
     WiFiClientSecure client;
     client.setInsecure();
+    client.setHandshakeTimeout(NET_TLS_HANDSHAKE_S);
 
     HTTPClient http;
-    http.setConnectTimeout(8000);   // ms - TCP + TLS handshake
+    http.setConnectTimeout(8000);   // ms - jen TCP connect, NE handshake
     http.setTimeout(12000);         // ms - cteni
     http.setReuse(false);
     if (!http.begin(client, url)) {
@@ -238,8 +244,7 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
     Net_NoteDate(http);
 
     // Nacti CELE telo (do PSRAM), pak teprve parsuj - zadny parse ze streamu.
-    bool complete = true;
-    long len = readBody(http, &complete);
+    long len = readBody(http);
     http.end();
 
     if (len < 0) {
@@ -247,14 +252,20 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
       if (attempt < MAX_ATTEMPTS) { delay(200); continue; }
       return false;
     }
-    if (!complete) {
-      Serial.printf("ADSB: uriznute telo (pokus %d)\n", attempt);
-      if (attempt < MAX_ATTEMPTS) { delay(200); continue; }
-      return false;
-    }
     if (len < 8) {
       Serial.printf("ADSB: kratke telo %ld (pokus %d)\n", len, attempt);
       if (attempt < MAX_ATTEMPTS) { delay(200); continue; }
+      return false;
+    }
+
+    // Levna kontrola tvaru driv, nez to uvidi parser. Chyti chybovou stranku
+    // z proxy, gzip nebo zbytky bloku - tedy vsechno, co by jinak doslo az k
+    // ArduinoJsonu a vratilo se jako neco nesrozumitelneho.
+    const char* head = s_body;
+    while (*head == ' ' || *head == '\r' || *head == '\n' || *head == '\t') head++;
+    if (*head != '{') {
+      Serial.printf("ADSB: odpoved nezacina JSON objektem, telo[0..120]: %.120s\n", s_body);
+      Status_Set(ST_ADSB, "neocekavana odpoved");
       return false;
     }
 
@@ -272,7 +283,11 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
     }
 
     if (!doc["ac"].is<JsonArray>()) {
-      Serial.println("ADSB: chybi pole 'ac' - drzim posledni data");
+      // Rict, CO prislo, ne jen ze to bylo spatne. "msg" je stavovy text
+      // serveru, zacatek tela chyti odpovedi, ktere ocekavany tvar nemely
+      // nikdy.
+      Serial.printf("ADSB: chybi pole 'ac' - msg: %s\n", doc["msg"] | "(zadne msg)");
+      Serial.printf("ADSB: telo[0..200]: %.200s\n", s_body);
       Status_Set(ST_ADSB, "spatny tvar odpovedi");
       return false;   // validni JSON, ale spatny tvar; retry by nepomohl
     }

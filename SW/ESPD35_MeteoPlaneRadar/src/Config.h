@@ -176,6 +176,18 @@
 // Bude to potreba hlavne od verze 0.5.0, kdy na pozadi pobezi web server.
 #define NET_MIN_HEAP 60000
 
+// WiFiClientSecure necha mbedTLS na handshake vychozich 120 s, tedy
+// sestinasobek WDT_TIMEOUT_S. setConnectTimeout() to NEKRYJE - ten omezuje jen
+// navazani TCP spojeni. Smycka handshaku ma vlastni limit a bezi uvnitr
+// http.GET(), kde watchdog nikdo neresetuje. V sekundach, ne v ms.
+#define NET_TLS_HANDSHAKE_S 8
+
+// Strop na cas jednoho stahovaneho tela. HTTPClient::writeToStreamDataBlock()
+// se toci na delay(1) bez vlastniho timeoutu, takze server, ktery prestane
+// posilat a pritom drzi socket otevreny, by visel az do hardwaroveho watchdogu.
+// Hlida to proto sink a na displeji zustanou predchozi data.
+#define NET_BODY_BUDGET_MS 15000UL
+
 // Hlavicka User-Agent pro VSECHNY odchozi dotazy. Neni to jen zdvorilost:
 // adsb.lol odpovi 403 s telem "User-Agent too generic; include valid contact
 // info", kdyz v ni zadny kontakt nevidi - a presne to delala vychozi

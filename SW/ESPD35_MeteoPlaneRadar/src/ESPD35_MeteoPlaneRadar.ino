@@ -535,6 +535,7 @@ void setup() {
   ADSB_SetPollFn(netPoll);
   CHMU_SetPollFn(netPoll);
   Net_SetPollFn(netPoll);
+  Route_SetPollFn(netPoll);
 
   // Pripoji se ulozenymi udaji, nebo vyvesi pristupovy bod a necha ho nahore.
   // Web server bezi, at to dopadne jakkoli.

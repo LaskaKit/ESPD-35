@@ -4,6 +4,7 @@
 #include "Net.h"
 #include "Config.h"
 #include "Clock.h"
+#include "NetSink.h"
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <esp_heap_caps.h>
@@ -35,7 +36,8 @@ void Net_NoteDate(HTTPClient& http) {
 void Net_SessionBegin() {
   if (s_sess) return;
   s_sess = new WiFiClientSecure();
-  if (s_sess) s_sess->setInsecure();
+  if (s_sess) { s_sess->setInsecure();
+                s_sess->setHandshakeTimeout(NET_TLS_HANDSHAKE_S); }
 }
 
 void Net_SessionEnd() {
@@ -54,10 +56,10 @@ bool Net_GetString(const char* url, String& out, const char* tag) {
 
   WiFiClientSecure  own;
   WiFiClientSecure& client = sess ? *s_sess : own;
-  if (!sess) client.setInsecure();
+  if (!sess) { own.setInsecure(); own.setHandshakeTimeout(NET_TLS_HANDSHAKE_S); }
 
   HTTPClient http;
-  http.setConnectTimeout(8000);
+  http.setConnectTimeout(8000);   // jen TCP connect, NE handshake
   http.setTimeout(12000);
   http.setReuse(sess);
   if (!http.begin(client, url)) { Serial.printf("%s: begin() selhalo\n", tag); return false; }
@@ -93,10 +95,10 @@ bool Net_GetBinary(const char* url, uint8_t* buf, size_t cap, size_t* outLen,
 
   WiFiClientSecure  own;
   WiFiClientSecure& client = sess ? *s_sess : own;
-  if (!sess) client.setInsecure();
+  if (!sess) { own.setInsecure(); own.setHandshakeTimeout(NET_TLS_HANDSHAKE_S); }
 
   HTTPClient http;
-  http.setConnectTimeout(8000);
+  http.setConnectTimeout(8000);   // jen TCP connect, NE handshake
   http.setTimeout(15000);
   http.setReuse(sess);            // nechat socket otevreny pro dalsi snimek
   if (!http.begin(client, url)) return false;
@@ -117,36 +119,15 @@ bool Net_GetBinary(const char* url, uint8_t* buf, size_t cap, size_t* outLen,
     return false;
   }
 
-  WiFiClient* stream = http.getStreamPtr();
-  if (!stream) { http.end(); return false; }
-
-  size_t got = 0;
-  unsigned long last = millis();
-  while (http.connected() && got < cap) {
-    poll();
-    size_t avail = stream->available();
-    if (avail) {
-      size_t want = cap - got;
-      if (avail < want) want = avail;
-      int r = stream->readBytes(buf + got, want);
-      if (r <= 0) break;
-      got += (size_t)r;
-      last = millis();
-    } else {
-      if (declared > 0 && got >= (size_t)declared) break;   // mame vse
-      if (millis() - last > 10000) { Serial.printf("%s: timeout uprostred prenosu\n", tag); break; }
-      delay(2);
-    }
-  }
+  // Telo cte sink pres writeToStream(), ktery chunked dekoduje. Rucni smycka
+  // nad getStreamPtr() to neumela a hexadecimalni velikosti bloku koncily
+  // primo v obrazku. Neuplny prenos hlasi jako chybu uz HTTPClient sam
+  // (porovnava zapsane bajty s Content-Length), takze se sem uriznuty PNG
+  // nedostane.
+  long got = Net_ReadBody(http, buf, cap, tag, s_poll);
   http.end();
 
-  // Uriznuty obrazek se dekoduje na smeti, takze neuplny prenos musi byt
-  // chyba tady, ne az objev dekoderu.
-  if (declared > 0 && got != (size_t)declared) {
-    Serial.printf("%s: neuplne (%u z %d B)\n", tag, (unsigned)got, declared);
-    return false;
-  }
   if (got < 100) return false;        // prazdna nebo chybova odpoved
-  if (outLen) *outLen = got;
+  if (outLen) *outLen = (size_t)got;
   return true;
 }

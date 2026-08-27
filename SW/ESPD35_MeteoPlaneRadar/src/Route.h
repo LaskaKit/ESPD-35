@@ -57,6 +57,11 @@ void       Route_Clear();
 // Provede cekajici dotaz. Vola se z loop(); bez dotazu nedela nic.
 void       Route_Tick();
 
+// Yield + reset watchdogu, vola se pri kazdem bloku stahovane odpovedi. Bez
+// toho projde cteni trasy dvema blokujicimi ctenimi po 8 s, tedy pres
+// WDT_TIMEOUT_S, a zarizeni se restartuje uprostred stahovani.
+void       Route_SetPollFn(void (*fn)());
+
 RouteState Route_GetState();
 const RouteInfo* Route_Get();   // platne, dokud je stav ROUTE_OK
 

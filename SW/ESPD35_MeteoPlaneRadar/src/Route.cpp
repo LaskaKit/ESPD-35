@@ -11,9 +11,14 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include "Net.h"          // Net_HeapOk - spolecna kontrola pameti pred TLS
+#include "NetSink.h"      // cteni tela bezpecne vuci chunked
+#include <esp_heap_caps.h>
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
+
+static void (*s_poll)() = nullptr;
+void Route_SetPollFn(void (*fn)()) { s_poll = fn; }
 
 // --- Text sanitising --------------------------------------------------------
 // adsb.lol vraci nazvy mest v Unicode - Izmir prijde jako U+0130 ("I" s teckou,
@@ -213,8 +218,9 @@ static void airportLabel(char* dst, size_t cap, JsonVariantConst ap) {
 // pri uspechu 200 a rozparsovanym dokumentem.
 static int getJson(const char* url, JsonDocument& filter, JsonDocument& doc) {
   WiFiClientSecure client; client.setInsecure();
+  client.setHandshakeTimeout(NET_TLS_HANDSHAKE_S);
   HTTPClient http;
-  http.setConnectTimeout(6000);
+  http.setConnectTimeout(6000);   // jen TCP connect, NE handshake
   http.setTimeout(8000);
   http.setReuse(false);
   if (!http.begin(client, url)) return -1000;
@@ -227,9 +233,23 @@ static int getJson(const char* url, JsonDocument& filter, JsonDocument& doc) {
   http.addHeader("Accept", "application/json");
   int code = http.GET();
   if (code != HTTP_CODE_OK) { http.end(); return code; }
-  DeserializationError err = deserializeJson(doc, http.getStream(),
-                                             DeserializationOption::Filter(filter));
+  // Telo nejdriv do bufferu. http.getStream() je SYROVY socket a chunked z nej
+  // neodstrani nikdo, takze parsovani primo z nej cetlo hexadecimalni velikost
+  // bloku jako hodnotu a vracelo Ok nad prazdnym dokumentem - stejna chyba,
+  // ktera tise vypinala radar letadel.
+  static uint8_t* s_buf = nullptr;
+  static const size_t ROUTE_MAX = 8192;
+  if (!s_buf) {
+    s_buf = (uint8_t*)heap_caps_malloc(ROUTE_MAX, MALLOC_CAP_SPIRAM);
+    if (!s_buf) s_buf = (uint8_t*)malloc(ROUTE_MAX);
+    if (!s_buf) { http.end(); return -1002; }
+  }
+  long len = Net_ReadBody(http, s_buf, ROUTE_MAX, "TRASA", s_poll);
   http.end();
+  if (len <= 0) return -1001;
+
+  DeserializationError err = deserializeJson(doc, s_buf, (size_t)len,
+                                             DeserializationOption::Filter(filter));
   return err ? -1001 : HTTP_CODE_OK;
 }
 
