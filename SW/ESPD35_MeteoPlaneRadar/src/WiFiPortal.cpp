@@ -1,123 +1,159 @@
 // =============================================================================
-//  ESPD35_MeteoPlaneRadar - WiFi pripojeni + konfiguracni AP portal s QR kodem.
-//  Port z petus/Meteo-PlaneRadar, AP obrazovka prizpusobena 480x320.
+//  ESPD35_MeteoPlaneRadar - WiFi. Viz WiFiPortal.h.
 // =============================================================================
 #include "WiFiPortal.h"
 #include "Settings.h"
+#include "WebConfig.h"
+#include "Lang.h"
 #include "UI.h"
+#include "Watchdog.h"
 #include "Config.h"
+#include "Version.h"
 
 #include <WiFi.h>
-#include <WiFiManager.h>
 
-static unsigned long s_lastReconnect = 0;
+static bool          s_ap = false;
+static unsigned long s_lastRetry = 0;
 
-// Vykresli na displej navod pro pripojeni k AP (obdelnik 480x320).
-static void drawApScreen() {
-  gfx->fillScreen(C_BLACK);
-
-  UI_TextCentered("ESPD35_MeteoPlaneRadar", 24, C_CYAN, 2);
-  UI_TextCentered("laskakit.cz", 50, C_GRAY, 1);
-  UI_TextCentered("Naskenujte telefonem:", 66, C_GRAY, 1);
-
-  // QR vlevo, textova napoveda vpravo.
-  int qrSize = 210;
-  int qrX = 20;
-  int qrY = 88;
-  UI_DrawWifiQR(AP_SSID, AP_PASSWORD, /*open=*/true, qrX, qrY, qrSize);
-
-  int tx = qrX + qrSize + 24;
-  gfx->setTextSize(2); gfx->setTextColor(C_WHITE);
-  gfx->setCursor(tx, 110); gfx->print("1) Pripojte");
-  gfx->setCursor(tx, 134); gfx->print("   WiFi sit:");
-  // Nazev site se bere z AP_SSID (Config.h), aby se pri jeho zmene nemusel
-  // hlidat jeste opsany text na displeji.
-  gfx->setTextColor(C_YELLOW); gfx->setTextSize(1);
-  gfx->setCursor(tx, 164); gfx->print(AP_SSID);
-  gfx->setTextColor(C_GRAY); gfx->setTextSize(1);
-  gfx->setCursor(tx, 214); gfx->print("(sit bez hesla)");
-  gfx->setTextColor(C_WHITE); gfx->setTextSize(2);
-  gfx->setCursor(tx, 236); gfx->print("2) Otevrete");
-  gfx->setCursor(tx, 258); gfx->print("   192.168.4.1");
-
-  UI_TextCentered("Zpet: Exit v portalu, nebo pockejte 3 min", 306, C_GRAY, 1);
-  gfx->flush();   // canvas -> panel
-}
-
-static const char* apPass() {
-  return (strlen(AP_PASSWORD) == 0) ? nullptr : AP_PASSWORD;
-}
-
-static void onAP(WiFiManager* wm) { drawApScreen(); }
-
-static void saveParams(WiFiManagerParameter& pLat, WiFiManagerParameter& pLon) {
-  double lat = atof(pLat.getValue());
-  double lon = atof(pLon.getValue());
-  if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180 && (lat != 0 || lon != 0)) {
-    Settings_SetLocation(lat, lon);
+// Cekani na pripojeni. Neni to "blokujici portal" jako driv - je to jeden
+// pokus s pevnym stropem, behem ktereho se krmi watchdog. Kdyz nevyjde,
+// vyskoci pristupovy bod a smycka se rozjede normalne.
+static bool waitForConnect(unsigned long timeoutMs) {
+  unsigned long start = millis();
+  while (millis() - start < timeoutMs) {
+    if (WiFi.status() == WL_CONNECTED) return true;
+    // WL_CONNECT_FAILED znamena spatne heslo - cekat dal nema smysl.
+    if (WiFi.status() == WL_CONNECT_FAILED) return false;
+    Watchdog_Feed();
+    delay(100);
   }
+  return false;
 }
 
-bool WiFi_ConnectOrPortal() {
+static void startAP() {
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_AP);
+  const char* pass = (strlen(AP_PASSWORD) == 0) ? nullptr : AP_PASSWORD;
+  WiFi.softAP(AP_SSID, pass);
+  s_ap = true;
+  Serial.printf("WiFi: pristupovy bod %s, adresa %s\n", AP_SSID, PORTAL_IP);
+  WebConfig_Begin(true);
+}
+
+static bool tryConnect(const char* ssid, const char* pass) {
+  Serial.printf("WiFi: pripojuji k %s\n", ssid);
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);          // spici radio pridava desitky ms ke kazdemu GET
+  WiFi.begin(ssid, pass);
+  if (!waitForConnect(WIFI_CONNECT_TIMEOUT_MS)) {
+    Serial.println("WiFi: pripojeni se nezdarilo");
+    return false;
+  }
+  s_ap = false;
+  Serial.printf("WiFi ok, IP %s\n", WiFi.localIP().toString().c_str());
+  WebConfig_Begin(false);
+  return true;
+}
+
+void WiFi_Begin() {
   gfx->fillScreen(C_BLACK);
-  UI_TextCentered("Pripojuji WiFi...", LCD_HEIGHT / 2, C_WHITE, 2);
+  UI_TextCentered(T(S_WIFI_WAIT), LCD_HEIGHT / 2, C_WHITE, 2);
   gfx->flush();
 
-  char latBuf[24], lonBuf[24];
-  snprintf(latBuf, sizeof(latBuf), "%.5f", Settings_Lat());
-  snprintf(lonBuf, sizeof(lonBuf), "%.5f", Settings_Lon());
+  if (Settings_HasWifi() &&
+      tryConnect(Settings_WifiSsid(), Settings_WifiPass())) return;
 
-  WiFiManager wm;
-  wm.setDebugOutput(false);
-  wm.setConfigPortalTimeout(180);
-  wm.setConnectTimeout(20);
-  wm.setAPCallback(onAP);
-
-  WiFiManagerParameter pLat("lat", "Zemepisna sirka (lat)", latBuf, 24);
-  WiFiManagerParameter pLon("lon", "Zemepisna delka (lon)", lonBuf, 24);
-  wm.addParameter(&pLat);
-  wm.addParameter(&pLon);
-  wm.setSaveParamsCallback([&] { saveParams(pLat, pLon); });
-
-  bool ok = wm.autoConnect(AP_SSID, apPass());
-  if (ok) {
-    saveParams(pLat, pLon);
-    Serial.printf("WiFi ok, IP %s\n", WiFi.localIP().toString().c_str());
-  } else {
-    Serial.println("WiFi nepripojeno");
-  }
-  return ok;
-}
-
-void WiFi_StartPortal() {
-  char latBuf[24], lonBuf[24];
-  snprintf(latBuf, sizeof(latBuf), "%.5f", Settings_Lat());
-  snprintf(lonBuf, sizeof(lonBuf), "%.5f", Settings_Lon());
-
-  WiFiManager wm;
-  wm.setDebugOutput(false);
-  wm.setConfigPortalTimeout(180);
-  wm.setAPCallback(onAP);
-  const char* menu[] = {"wifi", "info", "exit"};
-  wm.setMenu(menu, 3);
-  WiFiManagerParameter pLat("lat", "Zemepisna sirka (lat)", latBuf, 24);
-  WiFiManagerParameter pLon("lon", "Zemepisna delka (lon)", lonBuf, 24);
-  wm.addParameter(&pLat);
-  wm.addParameter(&pLon);
-  wm.setSaveParamsCallback([&] { saveParams(pLat, pLon); });
-  wm.startConfigPortal(AP_SSID, apPass());
-  saveParams(pLat, pLon);
+  startAP();
 }
 
 void WiFi_Loop() {
+  // --- Rezim pristupoveho bodu -------------------------------------------
+  if (s_ap) {
+    // Nekdo zadal sit na konfiguracni strance.
+    if (!WebConfig_WantsWifiConnect()) return;
+    WebConfig_ClearWifiConnect();
+
+    gfx->fillScreen(C_BLACK);
+    UI_TextCentered(T(S_WIFI_WAIT), LCD_HEIGHT / 2, C_WHITE, 2);
+    gfx->flush();
+
+    if (tryConnect(Settings_WifiSsid(), Settings_WifiPass())) return;
+
+    // Nepovedlo se - zpatky na pristupovy bod, at uzivatel muze zkusit znovu.
+    // Udaje se ZAHAZUJI, jinak by se deska po restartu tvrdohlave pokousela
+    // o sit, ktera nefunguje, misto aby nabidla portal.
+    Settings_ClearWifi();
+    startAP();
+    WiFi_DrawApScreen();
+    return;
+  }
+
+  // --- Bezny provoz -------------------------------------------------------
   if (WiFi.status() == WL_CONNECTED) return;
+
+  // Spadlo spojeni. Zkousime se vracet donekonecna a NEPADAME zpatky na
+  // pristupovy bod: nejcastejsi pricina je restartovany router, ktery se za
+  // chvili vrati. Shodit kvuli tomu desku do rezimu portalu by znamenalo, ze
+  // se uzivatel musi jit rucne prihlasit po kazdem vypadku proudu.
   unsigned long now = millis();
-  if (now - s_lastReconnect < 15000) return;
-  s_lastReconnect = now;
+  if (now - s_lastRetry < WIFI_RETRY_MS) return;
+  s_lastRetry = now;
+  Serial.println("WiFi: spojeni ztraceno, zkousim znovu");
   WiFi.reconnect();
 }
 
-bool   WiFi_IsConnected() { return WiFi.status() == WL_CONNECTED; }
-String WiFi_SSID() { return WiFi_IsConnected() ? WiFi.SSID() : String("(nepripojeno)"); }
-String WiFi_IP()   { return WiFi_IsConnected() ? WiFi.localIP().toString() : String("-"); }
-void   WiFi_Reset() { WiFiManager wm; wm.resetSettings(); }
+bool   WiFi_IsConnected() { return !s_ap && WiFi.status() == WL_CONNECTED; }
+bool   WiFi_IsAP()        { return s_ap; }
+String WiFi_SSID()        { return WiFi_IsConnected() ? WiFi.SSID() : String(T(S_NOT_CONNECTED)); }
+String WiFi_IP()          { return WiFi_IsConnected() ? WiFi.localIP().toString() : String(PORTAL_IP); }
+
+void WiFi_Reset() {
+  Settings_ClearWifi();
+  startAP();
+  WiFi_DrawApScreen();
+}
+
+// -----------------------------------------------------------------------------
+//  Obrazovka pristupoveho bodu (480x320): QR vlevo, postup vpravo.
+// -----------------------------------------------------------------------------
+void WiFi_DrawApScreen() {
+  gfx->fillScreen(C_BLACK);
+
+  UI_TextCentered("Nastaveni WiFi", 14, C_CYAN, 2);
+  {
+    char v[56];
+    snprintf(v, sizeof(v), "laskakit.cz  |  verze %s", FW_VERSION);
+    UI_TextCentered(v, 40, C_GRAY, 1);
+  }
+
+  const int qrSize = 196;
+  const int qrX = 22, qrY = 60;
+  UI_DrawWifiQR(AP_SSID, AP_PASSWORD, /*open=*/true, qrX, qrY, qrSize);
+
+  const int tx = qrX + qrSize + 24;
+  gfx->setTextSize(1); gfx->setTextColor(C_WHITE);
+  gfx->setCursor(tx, 74);  gfx->print("1) Naskenujte QR kod, nebo se");
+  gfx->setCursor(tx, 86);  gfx->print("   pripojte k siti:");
+  gfx->setTextColor(C_YELLOW);
+  gfx->setCursor(tx, 104); gfx->print(AP_SSID);
+  gfx->setTextColor(C_GRAY);
+  gfx->setCursor(tx, 118); gfx->print("(sit bez hesla)");
+
+  gfx->setTextColor(C_WHITE);
+  gfx->setCursor(tx, 142); gfx->print("2) V prohlizeci otevrete:");
+  gfx->setTextColor(C_YELLOW);
+  gfx->setTextSize(2);
+  gfx->setCursor(tx, 158); gfx->print(PORTAL_IP);
+
+  gfx->setTextSize(1); gfx->setTextColor(C_WHITE);
+  gfx->setCursor(tx, 190); gfx->print("3) Vyberte domaci WiFi");
+  gfx->setCursor(tx, 202); gfx->print("   a zadejte heslo.");
+
+  gfx->setTextColor(C_GRAY);
+  gfx->setCursor(tx, 226); gfx->print("Telefon nahlasi, ze sit nema");
+  gfx->setCursor(tx, 238); gfx->print("internet - to nevadi.");
+
+  UI_TextCentered("Deska ceka, dokud sit nezadate. Zadny casovy limit.",
+                  292, C_GRAY, 1);
+  gfx->flush();
+}

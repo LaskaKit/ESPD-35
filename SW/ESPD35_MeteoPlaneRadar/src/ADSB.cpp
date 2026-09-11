@@ -13,7 +13,13 @@
 #include <ArduinoJson.h>
 #include <math.h>
 #include <string.h>
+#include <stdlib.h>          // strtof
 #include "esp_heap_caps.h"   // PSRAM body buffer
+#include "NetSink.h"         // cteni tela bezpecne vuci chunked
+#include "Net.h"        // strazce interni pameti + hlavicka Date
+#include "Status.h"     // jednoradkove hlaseni pro stavovou stranku
+#include "Settings.h"   // vyskove pasmo, "jen s volacim znakem"
+#include "Config.h"     // SQUAWK_*
 
 static const float KM_PER_NM = 1.852f;
 
@@ -28,16 +34,47 @@ static Aircraft s_tmp[ADSB_MAX];
 static float s_tmpD2[ADSB_MAX];
 static void (*s_poll)() = nullptr;
 
+// Kolik letadel odfiltrovalo NASTAVENI (ne vzdalenost). Drzi se zvlast, aby
+// slo na stavove strance odlisit "nad vami nic nelita" od "mate prisny filtr".
+static int s_filteredOut = 0;
+
 void ADSB_SetPollFn(void (*fn)()) { s_poll = fn; }
 int  ADSB_Count() { return s_count; }
 const Aircraft* ADSB_List() { return s_list; }
 
-int ADSB_FindByIcao(const char* icao) {
-  if (!icao || !icao[0]) return -1;
+int ADSB_FindByHex(const char* hex) {
+  if (!hex || !hex[0]) return -1;
   for (int i = 0; i < s_count; i++) {
-    if (strcmp(s_list[i].icao, icao) == 0) return i;
+    if (strcmp(s_list[i].hex, hex) == 0) return i;
   }
   return -1;   // uz neni v datech
+}
+
+int ADSB_FilteredOut() { return s_filteredOut; }
+
+const char* ADSB_EmergencyCode(const Aircraft& a) {
+  if (!a.squawk[0]) return nullptr;
+  if (strcmp(a.squawk, SQUAWK_HIJACK) == 0) return SQUAWK_HIJACK;
+  if (strcmp(a.squawk, SQUAWK_RADIO)  == 0) return SQUAWK_RADIO;
+  if (strcmp(a.squawk, SQUAWK_EMERG)  == 0) return SQUAWK_EMERG;
+  return nullptr;
+}
+
+// Projde letadlo uzivatelskym filtrem? Nouzovy squawk filtr PRESKAKUJE -
+// letadlo hlasici 7700 je presne to, co chcete videt, i kdyz je zrovna mimo
+// nastavene vyskove pasmo.
+static bool passesFilter(const Aircraft& a) {
+  if (Settings_SquawkAlert() && ADSB_EmergencyCode(a)) return true;
+  if (Settings_OnlyWithCallsign() && !a.callsign[0]) return false;
+  const uint16_t lo = Settings_AltMinFt();
+  const uint16_t hi = Settings_AltMaxFt();
+  // Letadlo, ktere vysku vubec nehlasi (altFt == 0), se pasmem neposuzuje -
+  // jinak by ho spodni mez vyhodila, aniz by o nem cokoli bylo znamo.
+  if (a.altFt > 0.0f) {
+    if (a.altFt < (float)lo) return false;
+    if (a.altFt > (float)hi) return false;
+  }
+  return true;
 }
 
 static void poll() { if (s_poll) s_poll(); }
@@ -47,20 +84,34 @@ static bool readFloat(JsonObjectConst o, const char* key, float* out) {
   JsonVariantConst v = o[key];
   if (v.is<float>() || v.is<double>() || v.is<int>()) { *out = v.as<float>(); return true; }
   if (v.is<const char*>()) {
-    const char* s = v.as<const char*>();
-    if (s && *s) { *out = (float)atof(s); return true; }
+    // ArduinoJson si ciselny retezec prevede sam, jenze atof() nerozlisi
+    // chybejici hodnotu od necislne: z "ground" udelal 0.0 a ohlasil uspech.
+    // Koncovy ukazatel u strtof() ten rozdil ukaze, takze necekany literal
+    // propadne misto toho, aby se z nej stala nulova vyska.
+    const char* str = v.as<const char*>();
+    if (!str || !*str) return false;
+    char* end = nullptr;
+    float f = strtof(str, &end);
+    if (end == str) return false;
+    *out = f;
+    return true;
   }
   return false;
 }
 
+// Volacka, a JEN volacka. Drive tu byl zaloznik na hex adresu, aby letadlo,
+// ktere volacku nevysila (TIS-B, MLAT, soukrome a vojenske stroje), aspon neco
+// ukazalo. To byla chyba: volacka jde do dotazu na trasu a hex adresa se po
+// normalizaci tvari jako platne cislo letu - "a31234" se zmeni na "A31234",
+// coz je Aegean Airlines 1234, takze letadlo nad Prahou hlasilo let
+// Atheny - Istanbul. Bez volacky zustava pole prazdne a na trasu se nikdo
+// nepta; kdo potrebuje neco vykreslit, sahne po hexu sam (viz ScreenPlanes).
 static void copyCallsign(Aircraft* a, JsonObjectConst plane) {
-  const char* flight = plane["flight"] | "";
-  const char* hex = plane["hex"] | "";
-  const char* src = (flight[0] != '\0') ? flight : hex;
-  while (*src == ' ') src++;   // preskoc uvodni mezery
+  const char* src = plane["flight"] | "";
+  while (*src == ' ' || *src == '\t') src++;   // adsb.fi doplnuje na osm znaku
   int i = 0;
   while (src[i] && i < (int)sizeof(a->callsign) - 1) { a->callsign[i] = src[i]; i++; }
-  while (i > 0 && a->callsign[i-1] == ' ') i--;   // orizni koncove
+  while (i > 0 && (a->callsign[i-1] == ' ' || a->callsign[i-1] == '\t')) i--;
   a->callsign[i] = '\0';
 }
 
@@ -74,6 +125,10 @@ static void copyCallsign(Aircraft* a, JsonObjectConst plane) {
 static char*  s_body    = nullptr;
 static size_t s_bodyCap = 0;
 static const size_t ADSB_MAX_BODY = 1024 * 1024;   // 1 MB tvrdy strop
+// Rezervuje se, kdyz server neposle Content-Length (chunked). Pod tvrdym
+// stropem, nad vsim, co adsb.fi realne vrati: nejsirsi nabizeny dosah je
+// 100 km, kde odpoved ma nizke desitky kB.
+static const size_t ADSB_UNKNOWN_BODY = 384 * 1024;
 
 static bool bodyReserve(size_t need) {
   if (need <= s_bodyCap) return true;
@@ -86,40 +141,24 @@ static bool bodyReserve(size_t need) {
 }
 
 // Nacte cele telo HTTP do s_body. Vraci pocet bajtu (>= 0), nebo -1 pri tvrde
-// chybe (alokace / neni stream). *complete = false, kdyz server deklaroval
-// Content-Length, ktery jsme nedostali cely (uriznute stahovani).
-static long readBody(HTTPClient& http, bool* complete) {
-  *complete = true;
-  int declared = http.getSize();              // -1 kdyz neznamy / chunked
-  if (declared > (int)ADSB_MAX_BODY) return -1;
-  WiFiClient* stream = http.getStreamPtr();
-  if (!stream) return -1;
-
-  size_t want = (declared > 0) ? (size_t)declared : 8192;
-  if (!bodyReserve(want + 1)) return -1;
-
-  size_t total = 0;
-  unsigned long last = millis();
-  while (http.connected() && (declared < 0 || total < (size_t)declared)) {
-    poll();                                    // yield + nakrmi watchdog
-    size_t avail = stream->available();
-    if (avail) {
-      if (total + avail + 1 > s_bodyCap) {
-        if (total + avail + 1 > ADSB_MAX_BODY) { *complete = false; break; }
-        if (!bodyReserve(total + avail + 1)) return -1;
-      }
-      int r = stream->readBytes(s_body + total, avail);
-      if (r <= 0) break;
-      total += r;
-      last = millis();
-    } else {
-      if (millis() - last > 8000) break;       // zaseknuto uprostred prenosu
-      delay(2);
-    }
+// chybe: alokace, preteceni, zaseknuti nebo prenos ukonceny driv, nez slibovala
+// deklarovana delka.
+static long readBody(HTTPClient& http) {
+  // writeToStream() dekoduje chunked; rucni smycka nad getStreamPtr() ne, a
+  // presne proto zustavaly velikosti bloku v tele.
+  int declared = http.getSize();               // -1 kdyz chunked / neznamy
+  if (declared > (int)ADSB_MAX_BODY) {
+    Serial.printf("ADSB: hlaseno %d B, strop je %u B\n",
+                  declared, (unsigned)ADSB_MAX_BODY);
+    return -1;
   }
-  if (s_body) s_body[total] = '\0';
-  if (declared > 0 && total < (size_t)declared) *complete = false;
-  return (long)total;
+  // Sink zapisuje do pevneho bufferu a neumi ho zvetsit uprostred prenosu,
+  // takze chunked odpoved musi dostat misto dopredu. Buffer lezi v PSRAM a
+  // recykluje se mezi stazenimi, takze ta rezerva nic nestoji.
+  size_t want = (declared > 0) ? (size_t)declared + 1 : ADSB_UNKNOWN_BODY;
+  if (!bodyReserve(want)) return -1;
+
+  return Net_ReadBody(http, (uint8_t*)s_body, s_bodyCap, "ADSB", s_poll);
 }
 
 // Filtr: parsuji se jen klice, ktere pouzivame, takze JsonDocument zustava maly
@@ -137,12 +176,26 @@ static void buildFilter(JsonDocument& filter) {
   o["gs"]           = true;
   o["baro_rate"]    = true;
   o["t"]            = true;
-  o["type"]         = true;
+  o["r"]            = true;   // registrace - zadarmo v teze odpovedi
+  o["squawk"]       = true;
+
+  // Neni to uzitecny obsah, ale diagnostika: adsb.fi dava svuj stavovy text do
+  // "msg" ("No error" pri uspechu). Filtr ho driv zahazoval, takze firmware
+  // umel rict jen "chybi pole ac" a nic o tom proc. Prida se az nakonec -
+  // pridani klice muze zneplatnit JsonObject vzaty vyse.
+  filter["msg"] = true;
 }
 
 bool ADSB_Fetch(double lat, double lon, float radiusKm) {
   // Bez pripojeni -> nech, co je na obrazovce (radar NEVYMAZAT).
-  if (WiFi.status() != WL_CONNECTED) { Serial.println("ADSB: no WiFi"); return false; }
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("ADSB: no WiFi");
+    Status_Set(ST_ADSB, "bez WiFi");
+    return false;
+  }
+  // TLS handshake potrebuje ~45 kB interni RAM; bez ni selze uvnitr mbedTLS
+  // a navenek to vypada jako hole "HTTP -1". Radeji poll preskocit.
+  if (!Net_HeapOk("ADSB")) { Status_Set(ST_ADSB, "malo pameti"); return false; }
 
   float distNm = radiusKm / KM_PER_NM;
   char url[128];
@@ -157,9 +210,10 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
     poll();
     WiFiClientSecure client;
     client.setInsecure();
+    client.setHandshakeTimeout(NET_TLS_HANDSHAKE_S);
 
     HTTPClient http;
-    http.setConnectTimeout(8000);   // ms - TCP + TLS handshake
+    http.setConnectTimeout(8000);   // ms - jen TCP connect, NE handshake
     http.setTimeout(12000);         // ms - cteni
     http.setReuse(false);
     if (!http.begin(client, url)) {
@@ -168,20 +222,29 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
       return false;
     }
     // Slusne se predstavit - bezplatne API adsb.fi o to zada.
-    http.addHeader("User-Agent", "ESPD35_MeteoPlaneRadar/1.0 (+https://chiptron.cz)");
+    // POZOR: setUserAgent(), NE addHeader(). ESP32 HTTPClient::addHeader()
+    // mlcky zahazuje Connection, Host, Accept-Encoding a prave User-Agent -
+    // vidi je jako "handled by code" a nic nenahlasi. Tahle hlavicka se tedy
+    // driv neposilala vubec a odchazela vychozi "ESP32HTTPClient"; adsb.lol na
+    // ni odpovida 403 "User-Agent too generic". Jeden retezec pro obe API je
+    // v Config.h.
+    http.setUserAgent(HTTP_USER_AGENT);
     http.addHeader("Accept", "application/json");
+    // Hlavicka Date je zaloha hodin, kdyz NTP neprojde (viz Clock.h).
+    http.collectHeaders(NET_DATE_HEADER, 1);
 
     int code = http.GET();
     if (code != HTTP_CODE_OK) {
       Serial.printf("ADSB: HTTP %d (pokus %d)\n", code, attempt);
       http.end();
       if (attempt < MAX_ATTEMPTS) { delay(200); continue; }
+      Status_Set(ST_ADSB, "HTTP %d", code);
       return false;   // nech posledni dobra data
     }
+    Net_NoteDate(http);
 
     // Nacti CELE telo (do PSRAM), pak teprve parsuj - zadny parse ze streamu.
-    bool complete = true;
-    long len = readBody(http, &complete);
+    long len = readBody(http);
     http.end();
 
     if (len < 0) {
@@ -189,14 +252,20 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
       if (attempt < MAX_ATTEMPTS) { delay(200); continue; }
       return false;
     }
-    if (!complete) {
-      Serial.printf("ADSB: uriznute telo (pokus %d)\n", attempt);
-      if (attempt < MAX_ATTEMPTS) { delay(200); continue; }
-      return false;
-    }
     if (len < 8) {
       Serial.printf("ADSB: kratke telo %ld (pokus %d)\n", len, attempt);
       if (attempt < MAX_ATTEMPTS) { delay(200); continue; }
+      return false;
+    }
+
+    // Levna kontrola tvaru driv, nez to uvidi parser. Chyti chybovou stranku
+    // z proxy, gzip nebo zbytky bloku - tedy vsechno, co by jinak doslo az k
+    // ArduinoJsonu a vratilo se jako neco nesrozumitelneho.
+    const char* head = s_body;
+    while (*head == ' ' || *head == '\r' || *head == '\n' || *head == '\t') head++;
+    if (*head != '{') {
+      Serial.printf("ADSB: odpoved nezacina JSON objektem, telo[0..120]: %.120s\n", s_body);
+      Status_Set(ST_ADSB, "neocekavana odpoved");
       return false;
     }
 
@@ -214,7 +283,12 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
     }
 
     if (!doc["ac"].is<JsonArray>()) {
-      Serial.println("ADSB: chybi pole 'ac' - drzim posledni data");
+      // Rict, CO prislo, ne jen ze to bylo spatne. "msg" je stavovy text
+      // serveru, zacatek tela chyti odpovedi, ktere ocekavany tvar nemely
+      // nikdy.
+      Serial.printf("ADSB: chybi pole 'ac' - msg: %s\n", doc["msg"] | "(zadne msg)");
+      Serial.printf("ADSB: telo[0..200]: %.200s\n", s_body);
+      Status_Set(ST_ADSB, "spatny tvar odpovedi");
       return false;   // validni JSON, ale spatny tvar; retry by nepomohl
     }
 
@@ -235,6 +309,8 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
     float worstD2  = -1.0f;
     int   dropped  = 0;       // kolik letadel se nevešlo (jen pro vypis)
 
+    s_filteredOut = 0;
+
     for (JsonObjectConst plane : ac) {
       float plat, plon;
       if (!readFloat(plane, "lat", &plat) || !readFloat(plane, "lon", &plon)) continue;
@@ -247,6 +323,57 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
       // ve vzduchu. U letiste by jinak dokazala zaplnit cely ADSB_MAX.
       JsonVariantConst ab = plane["alt_baro"];
       if (ab.is<const char*>() && strcmp(ab.as<const char*>(), "ground") == 0) continue;
+
+      // Letadlo se nejdriv poskladá CELE do docasne promenne. Az pak jde na
+      // radu filtr a teprve potom se pro nej hleda misto v poli - jinak by
+      // odfiltrovane letadlo stihlo zabrat slot nekomu, kdo se ma zobrazit.
+      Aircraft cand;
+      cand.lat = plat;
+      cand.lon = plon;
+      cand.onGround = false;
+
+      // Smer letu - poznamename, jestli vubec existuje.
+      float tr = 0;
+      if (readFloat(plane, "track", &tr) || readFloat(plane, "true_heading", &tr)) {
+        cand.track = tr;
+        cand.hasTrack = true;
+      } else {
+        cand.track = 0;
+        cand.hasTrack = false;
+      }
+      // Vyska (baro), rychlost, stoupani.
+      float f = 0;
+      cand.altFt    = readFloat(plane, "alt_baro", &f) ? f : 0;
+      cand.gsKt     = readFloat(plane, "gs", &f) ? f : 0;
+      cand.baroRate = readFloat(plane, "baro_rate", &f) ? f : 0;
+      // Typ letadla. VYHRADNE "t" - to je kod draku ("A320"). Klic "type" je
+      // ZDROJ ZPRAVY ("adsb_icao", "mlat", "tisb_icao") a jako zaloha to bylo
+      // spatne: letadla, u kterych adsb.fi drak nezna, ukazovala v detailu
+      // "adsb_icao" misto typu. Radsi prazdno nez nesmysl - radek se pak
+      // proste nevykresli.
+      const char* ty = plane["t"] | "";
+      strncpy(cand.type, ty, sizeof(cand.type) - 1);
+      cand.type[sizeof(cand.type) - 1] = '\0';
+      // Registrace, stejna vec - "r" prijde v teze odpovedi, takze na "OK-TVU"
+      // vedle typu neni potreba zadne druhe API.
+      const char* rg = plane["r"] | "";
+      strncpy(cand.reg, rg, sizeof(cand.reg) - 1);
+      cand.reg[sizeof(cand.reg) - 1] = '\0';
+      // ICAO hex - stabilni identifikator (nemeni se mezi stazenimi).
+      const char* hx = plane["hex"] | "";
+      strncpy(cand.hex, hx, sizeof(cand.hex) - 1);
+      cand.hex[sizeof(cand.hex) - 1] = '\0';
+      // Kod odpovidace. Jen ctyri osmickove cislice; cokoli jineho zahodime,
+      // aby se do porovnani s 7500/7600/7700 nedostal zmetek.
+      const char* sq = plane["squawk"] | "";
+      if (strlen(sq) == 4 && sq[0] >= '0' && sq[0] <= '7') {
+        strncpy(cand.squawk, sq, sizeof(cand.squawk) - 1);
+        cand.squawk[sizeof(cand.squawk) - 1] = '\0';
+      }
+      copyCallsign(&cand, plane);
+
+      // Uzivatelsky filtr (vyskove pasmo, jen s volacim znakem).
+      if (!passesFilter(cand)) { s_filteredOut++; continue; }
 
       // Vzdalenost od stredu (km^2, plocha azimutalni aproximace - staci nam
       // na porovnavani, nemusi byt presna).
@@ -270,32 +397,7 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
       }
 
       s_tmpD2[slot] = d2;
-      s_tmp[slot].lat = plat;
-      s_tmp[slot].lon = plon;
-      s_tmp[slot].onGround = false;
-      // Smer letu - poznamename, jestli vubec existuje.
-      float tr = 0;
-      if (readFloat(plane, "track", &tr) || readFloat(plane, "true_heading", &tr)) {
-        s_tmp[slot].track = tr;
-        s_tmp[slot].hasTrack = true;
-      } else {
-        s_tmp[slot].track = 0;
-        s_tmp[slot].hasTrack = false;
-      }
-      // Vyska (baro), rychlost, stoupani.
-      float f = 0;
-      s_tmp[slot].altFt    = readFloat(plane, "alt_baro", &f) ? f : 0;
-      s_tmp[slot].gsKt     = readFloat(plane, "gs", &f) ? f : 0;
-      s_tmp[slot].baroRate = readFloat(plane, "baro_rate", &f) ? f : 0;
-      // Typ letadla (ruzne klice dle zdroje).
-      const char* ty = plane["t"] | (plane["type"] | "");
-      strncpy(s_tmp[slot].type, ty, sizeof(s_tmp[slot].type) - 1);
-      s_tmp[slot].type[sizeof(s_tmp[slot].type) - 1] = '\0';
-      // ICAO hex - stabilni identifikator (nemeni se mezi stazenimi).
-      const char* hx = plane["hex"] | "";
-      strncpy(s_tmp[slot].icao, hx, sizeof(s_tmp[slot].icao) - 1);
-      s_tmp[slot].icao[sizeof(s_tmp[slot].icao) - 1] = '\0';
-      copyCallsign(&s_tmp[slot], plane);
+      s_tmp[slot] = cand;
     }
 
     // Commitni docasny snimek do ziveho seznamu naraz.
@@ -304,7 +406,12 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
     if (dropped) Serial.printf("Letadla: %d (%ld bajtu, %d vzdalenych vynechano)\n",
                                n, len, dropped);
     else         Serial.printf("Letadla: %d (%ld bajtu)\n", n, len);
+    if (s_filteredOut) Serial.printf("Letadla: %d odfiltrovano nastavenim\n", s_filteredOut);
+
+    if (s_filteredOut) Status_Set(ST_ADSB, "OK, %d letadel (%d filtrem)", n, s_filteredOut);
+    else               Status_Set(ST_ADSB, "OK, %d letadel", n);
     return true;
   }
+  Status_Set(ST_ADSB, "stahovani selhalo");
   return false;
 }

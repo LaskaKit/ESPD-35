@@ -27,13 +27,15 @@ bool ScreenSettings_HandleTap(int x, int y);
 // Volne misto pro prepinani dlouhym stiskem zustava nahore (titulek) a dole.
 bool ScreenSettings_HitsControl(int x, int y);
 
-// Zadost o WiFi/AP portal (blokujici - obsluha v .ino).
-bool ScreenSettings_WantsPortal();
-void ScreenSettings_ClearPortal();
-
-// Zadost o rezim OTA aktualizace (blokujici - obsluha v .ino).
-bool ScreenSettings_WantsOTA();
-void ScreenSettings_ClearOTA();
+// Zadost o zapomenuti ulozene WiFi site (obsluha v .ino - vyvesi pristupovy
+// bod a nakresli QR kod).
+//
+// Od 0.5.0 uz neni co "spoustet": blokujici portal zanikl spolu s WiFiManagerem
+// a aktualizace firmwaru se dela z prohlizece na /update. Z puvodnich dvou
+// tlacitek v pravem sloupci tak zbylo jedno a misto druheho je tam adresa
+// webove konfigurace.
+bool ScreenSettings_WantsWifiReset();
+void ScreenSettings_ClearWifiReset();
 
 // Zadost o tovarni reset (smazani WiFi + nastaveni, pak restart).
 //
