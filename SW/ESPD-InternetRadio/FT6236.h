@@ -56,6 +56,7 @@ public:
   boolean begin(uint8_t thresh = FT6236_DEFAULT_THRESHOLD, int8_t sda = -1, int8_t scl = -1);
   uint8_t touched(void);
   TS_Point getPoint(uint8_t n = 0);
+  uint8_t read(TS_Point &p); // one I2C read: returns number of touches, fills first point
   // Helper functions to make the touch display aware
 	void setRotation(uint8_t rotation);
 

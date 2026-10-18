@@ -90,6 +90,16 @@ TS_Point FT6236::getPoint(uint8_t n)
     }
 }
 
+/* Reads touch count and the first point in a single I2C transaction */
+uint8_t FT6236::read(TS_Point &p)
+{
+    readData();
+    if (touches == 0)
+        return 0;
+    p = TS_Point(touchX[0], touchY[0], 1, _touch_width, _touch_height, _rotation);
+    return touches;
+}
+
 void FT6236::readData(void)
 {
 
@@ -98,7 +108,11 @@ void FT6236::readData(void)
     Wire.write((byte)0);
     Wire.endTransmission();
 
-    Wire.requestFrom((byte)FT6236_ADDR, (byte)16);
+    if (Wire.requestFrom((byte)FT6236_ADDR, (byte)16) != 16)
+    {
+        touches = 0;
+        return;
+    }
     for (uint8_t i = 0; i < 16; i++)
         i2cdat[i] = Wire.read();
 
