@@ -9,7 +9,9 @@
 #include "CzCitiesData.h"   // Czech cities - they replace the European ones
 #include "UI.h"
 #include "Layout.h"
+#include "AACanvas.h"   // cteni framebufferu kvuli kontrastu popisku (0.8.1)
 #include <string.h>
+#include <stdlib.h>
 #include <math.h>
 
 // Decode a fixed-point vertex back into degrees.
@@ -105,6 +107,40 @@ static void drawOneCity(const EuCity& c, ProjectFn project, int cx, int cy,
                         bool showFull, uint8_t tier,
                         float lat0, float lat1, float lon0, float lon1);
 
+// --- Barva popisku podle toho, co je pod nim (0.8.1) --------------------------
+// Na meteoradaru lezi popisky pres srazky a zluty dest nebo bledsi odstiny
+// varianty masked jsou stejne svetle jako bily text - jmeno proste zmizelo.
+// Pred nakreslenim popisku se proto prectou pixely, ktere zakryje: kdyz je
+// prilis mnoho z nich jasem blizko zamyslene barve, popisek (i tecka) se
+// nakresli cerne. Na radaru letadel je mapa cerna a nic se nemeni.
+#define LABEL_MIN_CONTRAST 90      // rozdil jasu, ktery se jeste da precist, 0..255
+#define LABEL_BAD_SHARE    25      // procent pixelu s malym kontrastem -> cerne
+
+static int luma565(uint16_t c) {
+  const int r = ((c >> 11) & 0x1F) * 255 / 31;
+  const int g = ((c >> 5) & 0x3F) * 255 / 63;
+  const int b = (c & 0x1F) * 255 / 31;
+  return (r * 77 + g * 150 + b * 29) >> 8;
+}
+
+static uint16_t contrastColour(int x, int y, int w, int h, uint16_t want) {
+  uint16_t* fb = static_cast<AACanvas*>(gfx)->getFramebuffer();
+  if (!fb) return want;
+  const int W = gfx->width(), H = gfx->height();
+  const int lw = luma565(want);
+  int total = 0, bad = 0;
+  for (int j = y; j < y + h; j++) {
+    if (j < 0 || j >= H) continue;
+    for (int i = x; i < x + w; i++) {
+      if (i < 0 || i >= W) continue;
+      total++;
+      if (abs(luma565(fb[(int32_t)j * W + i]) - lw) < LABEL_MIN_CONTRAST) bad++;
+    }
+  }
+  if (total && bad * 100 >= total * LABEL_BAD_SHARE) return C_BLACK;
+  return want;
+}
+
 void EuBorder_DrawCities(ProjectFn project, int cx, int cy, int radius,
                          uint16_t dotColor, uint16_t textColor,
                          bool showFull, uint8_t maxTier,
@@ -153,7 +189,7 @@ static void drawOneCity(const EuCity& c, ProjectFn project, int cx, int cy,
     // Where the label goes: to the right of the dot, or to the left when that
     // would spill out of the circle.
     const char* label = showFull ? c.name : c.abbr;
-    int tw = strlen(label) * 6;
+    int tw = Layout_TextW(label, 1);
     int ty = sy - 4;
     int tx = sx + 9;
     if ((long)(tx + tw - cx) * (tx + tw - cx) + dy * dy > r2) tx = sx - 9 - tw;
@@ -172,9 +208,21 @@ static void drawOneCity(const EuCity& c, ProjectFn project, int cx, int cy,
       tx = alt;
     }
 
-    gfx->fillCircle(sx, sy, 3, dotColor);
+    // Barvy se rozhodnou DRIV, nez se z mesta cokoli nakresli, aby tecka
+    // nepocitala jako pozadi vlastniho popisku.
+    const uint16_t dc = contrastColour(sx - 3, sy - 3, 7, 7, dotColor);
+    const uint16_t tc = contrastColour(tx, ty, tw, 8, textColor);
+    // Cerna jde s tenkym okrajem puvodni barvy: popisek jen zcasti nad svetlym
+    // destem musi zustat citelny i nad tmavou casti.
+    if (dc != dotColor) gfx->fillCircle(sx, sy, 4, dotColor);
+    gfx->fillCircle(sx, sy, 3, dc);
     gfx->setTextSize(1);
-    gfx->setTextColor(textColor);
+    if (tc != textColor) {
+      gfx->setTextColor(textColor);
+      static const int8_t OFF[4][2] = { {-1, 0}, {1, 0}, {0, -1}, {0, 1} };
+      for (const auto& o : OFF) { gfx->setCursor(tx + o[0], ty + o[1]); gfx->print(label); }
+    }
+    gfx->setTextColor(tc);
     gfx->setCursor(tx, ty);
     gfx->print(label);
   }

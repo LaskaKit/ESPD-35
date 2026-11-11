@@ -128,11 +128,127 @@
 #define ADSB_MID_KM  50.0f
 
 // ---------------------------------------------------------------------------
+//  Funkce prevzate z petus/MeteoPlaneRadar 0.8.0 - 0.8.5
+// ---------------------------------------------------------------------------
+
+// --- Zdroj meteoradaru ------------------------------------------------------
+// CHMU, nebo tentyz snimek "masked" (jen srazky, ktere dopadaji na zem).
+// RainViewer na teto desce neni; hodnota 1 je vyhrazena kvuli kompatibilite
+// exportu s puvodnim projektem a chova se jako CHMU.
+#define RADAR_SRC_CHMU        0
+#define RADAR_SRC_RAINVIEWER  1     // jen rezervovano
+#define RADAR_SRC_CHMU_MASKED 2
+#define RADAR_SRC_MAX         2
+
+// --- Pismo (0.8.0 hodiny, 0.8.5 vsechny obrazovky) --------------------------
+// Vyhlazene obrysy pisma (Inter, Poppins) vykreslene v 16 urovnich pokryti, viz
+// AAFont.h a tools/make_fonts.py v puvodnim projektu. CLOCK_FONT_PIXEL vrati
+// vestaveny font 5x7 a vsechno vypada jako drive.
+#define CLOCK_FONT_PIXEL   0
+#define CLOCK_FONT_INTER   1     // Inter Display Medium - vychozi
+#define CLOCK_FONT_POPPINS 2     // Poppins Medium - kulatejsi
+#define CLOCK_FONT_THIN    3     // Inter Display Light - tenke
+#define CLOCK_FONT_MAX     3
+#define CLOCK_FONT_DEFAULT CLOCK_FONT_INTER
+
+// --- Barvy vysek letadel (0.8.0) --------------------------------------------
+// Ctyri hranice ve STOPACH a pet barev. Vychozi hodnoty jsou presne dosavadni
+// legenda teto desky (<3, 3-10, 10-20, 20-30, >30 tisic ft), takze dokud se do
+// nastaveni nesahne, nic se nemeni.
+#define ALT_BANDS_N          4
+#define ALT_BAND0_FT_DEFAULT  3000
+#define ALT_BAND1_FT_DEFAULT 10000
+#define ALT_BAND2_FT_DEFAULT 20000
+#define ALT_BAND3_FT_DEFAULT 30000
+#define ALT_COL0_DEFAULT 0xF800       // cervena - priblizeni, vrtulniky
+#define ALT_COL1_DEFAULT 0xFC00       // oranzova - stoupani / klesani
+#define ALT_COL2_DEFAULT 0xFFE0       // zluta - stredni hladiny
+#define ALT_COL3_DEFAULT 0x07E0       // zelena - nizsi cestovni
+#define ALT_COL4_DEFAULT 0x02DF       // modra - cestovni hladina
+
+// --- Hlidani bourky (0.8.0) -------------------------------------------------
+// Kazdych STORM_PERIOD_MS se zkontroluje nejnovejsi snimek CHMU: je do zadane
+// vzdalenosti odraz aspon zadane sily? Kdyz ano, meteoradar se prida do
+// stridani obrazovek.
+#define STORM_DBZ_DEFAULT   20
+#define STORM_KM_DEFAULT    50
+#define STORM_PERIOD_MS     300000UL   // 5 min, kadence CHMU
+#define STORM_RETRY_MS       90000UL   // drive po neuspechu
+// Jeden pixel je ctverecni kilometr a muze byt artefakt radaru.
+#define STORM_MIN_PIXELS    3
+// Kolik klidnych snimku po sobe vyradi meteoradar zase ze stridani.
+#define STORM_CLEAR_CHECKS  2
+
+// --- Letadlo poblic a vyhled z okna (0.8.0) --------------------------------
+#define PLANE_ALERT_KM_DEFAULT   5
+#define PLANE_ALERT_SEC_DEFAULT  15
+// Jak casto se ptat adsb.fi, kdyz obrazovka Letadla NENI na displeji. Ptame se
+// jen na maly okruh, odpoved ma par set bajtu.
+#define PLANE_WATCH_PERIOD_MS    8000UL
+// Jedno letadlo se ohlasi jednou; pamatuje se tak dlouho.
+#define PLANE_ALERT_FORGET_MS    900000UL   // 15 min
+#define PLANE_ALERT_MEMORY       12
+#define WINDOW_WIDTH_DEFAULT      90
+#define WINDOW_KM_DEFAULT         15
+
+// --- WiFi: az tri site (0.8.0) ----------------------------------------------
+#define WIFI_SLOTS 3
+
+// --- Jazyk (displej i web) --------------------------------------------------
+#define LANG_CS      0
+#define LANG_SK      1
+#define LANG_MAX     1
+#define LANG_DEFAULT LANG_CS
+// Pri vypadku se nejdriv zkousi sit, na ktere deska byla (restart routeru je
+// obvykla pricina), a teprve po teto dobe ostatni ulozene.
+#define WIFI_SWITCH_AFTER_MS 60000UL
+#define WIFI_TRY_MS          12000UL    // na jednu sit pri startu
+// Po restartu watchdogem (nebo padu) deska routeru neohlasi odpojeni a router
+// ji muze chvili odmitat, dokud stare spojeni sam nezahodi. Proto se pri startu
+// ulozene site zkousi vic kol (dalsi kola s delsim cekanim), nez vyskoci portal.
+#define WIFI_BOOT_ROUNDS     3
+// Portal (QR s vyberem site) pri ulozene siti: kdyz se k pristupovemu bodu
+// za tuto dobu nikdo nepripoji, deska se restartuje a zkusi ulozene site znovu.
+// Bez ulozene site se nerestartuje - neni co zkouset. 0 = vypnuto.
+#define WIFI_PORTAL_RESTART_MS (30UL * 60UL * 1000UL)
+
+// --- Home Assistant (0.8.0) -------------------------------------------------
+// GET http://<deska>/api/ha vraci jeden plochy JSON pro integraci RESTful.
+// Ve vychozim stavu vypnuto. NEOVERENO se skutecnym Home Assistantem.
+#define HA_DEFAULT_ON false
+
+// ---------------------------------------------------------------------------
+//  Vypadek adsb.fi (z petus/MeteoPlaneRadar 0.8.4)
+//
+//  Drive se po chybe zeptalo hned znovu a pak dal kazdych 10-30 s, coz je proti
+//  pretizenemu serveru presne spatne. Ted kazda dalsi chyba v rade zdvojnasobi
+//  spolecnou pauzu (radar, hlidani letadel poblic i Home Assistant chodi pres
+//  stejnou branu) az do ADSB_BACKOFF_MAX_MS. 429 a 5xx se v temze pokusu
+//  neopakuji a Retry-After od serveru se respektuje. Prvni dobra odpoved pauzu
+//  zrusi.
+//
+//  Stara letadla se nevydavaji za ziva: po ADSB_STALE_MS bez cerstvych dat
+//  zesednou a misto poctu se napise jejich stari, po ADSB_HIDE_MS se
+//  nekresli vubec. Ze starych dat se nespusti ani upozorneni.
+// ---------------------------------------------------------------------------
+#define ADSB_BACKOFF_BASE_MS   10000UL     // pauza po prvni chybe
+#define ADSB_BACKOFF_MAX_MS   300000UL     // nejvys 5 min
+#define ADSB_RETRY_AFTER_MAX_S   900       // Retry-After brat vazne do 15 min
+#define ADSB_STALE_MS          60000UL     // sede po minute
+#define ADSB_HIDE_MS          600000UL     // pryc po deseti
+
+// ---------------------------------------------------------------------------
 //  Meteoradar (CHMU)
 // ---------------------------------------------------------------------------
 // Hodnota 0 je zvlastni - znamena pevny pohled na celou CR (viz CZ_VIEW_*
 // na konci souboru). Nechte ji posledni, je ze vsech nejsirsi.
 #define METEO_RANGES_KM { 25.0f, 50.0f, 100.0f, 200.0f, 0.0f }
+
+// Obnova animace: po uspechu jednou za pet minut (CHMU vydava snimek po peti
+// minutach), po neuspechu uz za minutu. Drive se po neuspechu index zkousel
+// v kazdem pruchodu smyckou, tedy prakticky porad dokola.
+#define METEO_PERIOD_MS 300000UL
+#define METEO_RETRY_MS   60000UL
 
 // ---------------------------------------------------------------------------
 //  Detail letadla
@@ -150,11 +266,6 @@
 //  dosazitelne presny vychod a zapad.
 // ---------------------------------------------------------------------------
 #define MAP_ROT_STEP_DEG 45    // stupnu na jeden stisk (45 -> osm poloh)
-
-// ---------------------------------------------------------------------------
-//  OTA (aktualizace firmwaru pres WiFi)
-// ---------------------------------------------------------------------------
-#define OTA_IDLE_MS 300000UL   // po teto dobe bez nahravani se rezim OTA ukonci
 
 // ---------------------------------------------------------------------------
 //  Watchdog
@@ -187,6 +298,12 @@
 // posilat a pritom drzi socket otevreny, by visel az do hardwaroveho watchdogu.
 // Hlida to proto sink a na displeji zustanou predchozi data.
 #define NET_BODY_BUDGET_MS 15000UL
+
+// Strop na TEXTOVOU odpoved (Net_GetString). Telo se cte do sdileneho bufferu
+// v PSRAM - drive ho bral http.getString() bez jakehokoli stropu, a to na
+// interni heap, ze ktereho si bere i TLS handshake. Nejvetsi ocekavane telo je
+// cena elektriny na dva dny po ctvrthodinach (~25 kB); 128 kB je bohata rezerva.
+#define NET_MAX_TEXT (128 * 1024)
 
 // Hlavicka User-Agent pro VSECHNY odchozi dotazy. Neni to jen zdvorilost:
 // adsb.lol odpovi 403 s telem "User-Agent too generic; include valid contact
@@ -272,21 +389,32 @@
 // ---------------------------------------------------------------------------
 //  Obrazovky
 //
-//  Pet, a ctyri datove se daji jednotlive vypnout ve webovem rozhrani.
+//  Sedm, a sest datovych se da jednotlive vypnout ve webovem rozhrani.
 //  Nastaveni vypnout nejde - bez nej by se uz nedalo dostat zpet k webu, kdyby
 //  nekdo vypnul vsechno ostatni.
 //
 //  POZOR na cislovani: do 0.5.0 platilo LETADLA=0, METEO=1, NASTAVENI=2 a tahle
-//  cisla jsou ulozena v NVS pod klicem "scr". Nove cislovani je jine, proto se
-//  posledni obrazovka uklada pod NOVY klic "scr2" a stary se pri prvnim startu
-//  jednorazove prevede (viz Settings_Begin).
+//  cisla jsou ulozena v NVS pod klicem "scr". Pak prisly hodiny a predpoved
+//  (klic "scr2") a s energetickymi obrazovkami se Nastaveni posunulo ze 4 na 6
+//  (klic "scr3"). Starsi klice se pri prvnim startu jednorazove prevedou (viz
+//  Settings_Begin).
+//
+//  Obe energeticke obrazovky jsou po aktualizaci VYPNUTE - zapinaji se ve
+//  webovem nastaveni. Dokud jsou vypnute, deska si o jejich data vubec nerekne.
 // ---------------------------------------------------------------------------
 #define SCREEN_CLOCK_I    0
 #define SCREEN_PLANES_I   1
 #define SCREEN_METEO_I    2
 #define SCREEN_FORECAST_I 3
-#define SCREEN_SETTINGS_I 4
-#define SCREEN_N          5
+#define SCREEN_PRICE_I    4     // spotova cena elektriny
+#define SCREEN_MIX_I      5     // vyroba elektriny podle zdroju
+#define SCREEN_SETTINGS_I 6
+#define SCREEN_N          7
+
+// Vychozi maska zapnutych datovych obrazovek: hodiny, letadla, meteoradar,
+// predpoved. Energeticke obrazovky si uzivatel zapne sam.
+#define SCREEN_MASK_DEFAULT 0x0F
+#define SCREEN_MASK_ALL     0x3F
 
 // Automaticke stridani obrazovek se pozastavi na tuhle dobu po gestu, ktere
 // znamena "ridim to sam" (swipe, dlouhy stisk). Klepnuti ho nezastavuje -
@@ -304,8 +432,14 @@
 #define AIRQUALITY_URL "https://air-quality-api.open-meteo.com/v1/air-quality"
 #define GEOCODE_URL    "https://geocoding-api.open-meteo.com/v1/search"
 
-#define FORECAST_HOURS 6        // hodinove sloupce (480 / 6 = 80 px na sloupec)
-#define FORECAST_DAYS  3        // denni radky pod nimi
+// Predpoved se cte po radcich: "nyni", pak dve okna po FORECAST_WIN_H hodinach
+// popsana casem (12-15h, 15-18h), pod nimi dnesek a dalsi dny s datem.
+// FORECAST_HOURS je pocet HODINOVYCH hodnot, ktere se stahnou: hodina, ve
+// ktere jsme, plus dve okna.
+#define FORECAST_WIN_H 3
+#define FORECAST_HOURS (1 + 2 * FORECAST_WIN_H)   // 7
+// Dnesek + dalsi dny. Na 320 px vysky se jich pod okna vejde pet.
+#define FORECAST_DAYS  5
 #define FORECAST_PERIOD_MS 1800000UL   // 30 min
 #define FORECAST_RETRY_MS   120000UL   // 2 min po neuspechu
 
@@ -315,16 +449,95 @@
 // ---------------------------------------------------------------------------
 //  Venkovni teplota (radek vedle hodin)
 //
-//  Znaminko stupnu: vestaveny font je 7bitove ASCII, takze skutecny "°" muze
-//  vyjit jako nahodny znak. "degC" je bezpecny zapis. Prepnout na 1 az potom,
-//  co si na skutecnem displeji overite, ze se znak vykresli spravne.
+//  Znaminko stupnu. Vestaveny font (glcdfont) je razeny podle CP437 a stupen
+//  v nem lezi na 0xF8 - Arduino_GFX ho indexuje primo, bez posunu, ktery
+//  zna Adafruit GFX. Drive se sahalo na 0xB0 (Latin-1), kde je ve fontu
+//  stinovany blok, a proto byl vychozi nouzovy zapis "degC". Prepnutim na 0
+//  se "degC" vrati.
 // ---------------------------------------------------------------------------
-#define OUTSIDE_DEG_SYMBOL 0
+#define OUTSIDE_DEG_SYMBOL 1
 #if OUTSIDE_DEG_SYMBOL
-  #define OUTSIDE_DEG_TEXT "\xB0C"
+  #define OUTSIDE_DEG_TEXT "\xF8" "C"
 #else
   #define OUTSIDE_DEG_TEXT "degC"
 #endif
+
+// ---------------------------------------------------------------------------
+//  Energie: spotova cena elektriny a vyroba podle zdroju
+//
+//  Oba zdroje zdarma, bez klice a bez registrace - stejna latka jako u vsech
+//  ostatnich zdroju v projektu.
+//
+//  CENA: spotovaelektrina.cz preposila vysledek denniho trhu OTE uz v Kc,
+//  dnesek i zitrek v JEDNE odpovedi. Endpoint -qh vraci CTVRTHODINY - v nich
+//  se na OTE doopravdy obchoduje. Starsi get-prices-json vraci hodinove
+//  PRUMERY a vlastni dokumentace API ho vede jako zastaraly; na odpolednim
+//  nabehu se ctvrthodina od prumeru hodiny lisi i o pul koruny za kWh.
+//
+//    {"hoursToday":[{"hour":0,"minute":0,"priceCZK":5291, ...}, ...],
+//     "hoursTomorrow":[ ... ]}
+//
+//  96 polozek na den, priceCZK je za MEGAWATTHODINU. Vsechno pod stahovanim
+//  pracuje v Kc/MWh a teprve obrazovka deli tisicem. hoursTomorrow je prazdne,
+//  dokud se aukce neuzavre (kolem 14:00) - to je bezny stav, ne chyba.
+//
+//  VYROBA: rozhrani energy-charts (Fraunhofer ISE) s daty ENTSO-E, bez tokenu,
+//  ktery vyzaduje samotne ENTSO-E.
+//
+//    {"unix_seconds":[...], "production_types":[{"name":"Nuclear","data":[...]}]}
+//
+//  Zalezi na okne. Za cely den prijde pres sto kilobajtu; za posledni par
+//  hodin par kilobajtu - a potrebujeme jen nejnovejsi vzorek.
+// ---------------------------------------------------------------------------
+#define PRICE_URL "https://spotovaelektrina.cz/api/v1/price/get-prices-json-qh"
+#define MIX_URL   "https://api.energy-charts.info/public_power"
+
+// Vychozi zeme pro vyrobu. Jen vychozi - skutecna je v nastaveni
+// (Settings_MixCountry), energy-charts pokryva 38 evropskych zemi a "eu".
+#define MIX_COUNTRY_DEFAULT "cz"
+
+// Kde maji obe obrazovky smysl. Ceny jsou cesky trh v Kc, vyroba funguje
+// v Evrope. Mimo tyto obdelniky obrazovka rekne, ze data nema, a stahovani
+// mlci. Obdelniky, ne hranice: u hranic radeji obrazovku ukazat (nekdo
+// v Zitave muze ceske ceny chtit), a jedno zaskrtnuti ve webu to stejne vyresi.
+#define PRICE_AREA_LAT_MIN  48.3f
+#define PRICE_AREA_LAT_MAX  51.3f
+#define PRICE_AREA_LON_MIN  11.8f
+#define PRICE_AREA_LON_MAX  19.2f
+
+#define MIX_AREA_LAT_MIN    34.0f
+#define MIX_AREA_LAT_MAX    72.0f
+#define MIX_AREA_LON_MIN   -25.0f
+#define MIX_AREA_LON_MAX    45.0f
+
+// Jak daleko zpet se ptat. Data se OBVYKLE zverejnuji se zpozdenim jedne az dvou
+// hodin - ale ne vzdy: 25. 10. 2026 byl nejnovejsi cesky vzorek stary jedenact
+// hodin, ctyrhodinove okno prislo jako "404 no content available" a obrazovka
+// cely den visela na "Nacitam". Okno se proto rozsiruje, dokud neco neprijde.
+// Uzke jde prvni, protoze ma par kilobajtu.
+#define MIX_WINDOW_H      4
+#define MIX_WINDOWS_H     { MIX_WINDOW_H, 12, 36 }
+
+// Cena je na cely den pevna, jde tedy hlavne o zitrek, ktery vychazi kolem 14:00.
+#define PRICE_PERIOD_MS  1800000UL   // 30 min
+#define PRICE_RETRY_MS    120000UL   // 2 min po neuspechu
+
+// Vyroba je u zdroje po ctvrthodinach - casteji nema smysl.
+#define MIX_PERIOD_MS     900000UL   // 15 min
+#define MIX_RETRY_MS      120000UL
+
+// Strop barevne skaly ceny v Kc/MWh. Pod nim se barvy natahuji pres rozsah
+// dne (aby byl citelny i plochy den), nad nim je skala pribita - drahy den
+// ma vypadat drahy, ne jen "cerveny na svem vrcholu".
+#define PRICE_SCALE_MAX 6000.0f
+
+// Zaporna cena neni chyba - nastava o vetrnych nedelich a je presne to, o cem
+// chcete vedet. Kresli se vlastni barvou.
+#define PRICE_NEGATIVE_BELOW 0.0f
+
+// O kolik se smi soucet vyroby lisit od spotreby + vyvozu, nez stavova stranka
+// rekne, ze mix vypada neuplne (chybejici typ zdroje).
+#define MIX_SANITY_TOL 0.12f
 
 // ---------------------------------------------------------------------------
 //  Trasa letu (adsb.lol) - zdarma, bez klice, bez registrace.

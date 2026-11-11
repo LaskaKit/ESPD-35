@@ -15,7 +15,8 @@
 #include <string.h>
 #include <stdlib.h>          // strtof
 #include "esp_heap_caps.h"   // PSRAM body buffer
-#include "NetSink.h"         // cteni tela bezpecne vuci chunked
+#include "NetSink.h"
+#include "PlaneIcon.h"         // cteni tela bezpecne vuci chunked
 #include "Net.h"        // strazce interni pameti + hlavicka Date
 #include "Status.h"     // jednoradkove hlaseni pro stavovou stranku
 #include "Settings.h"   // vyskove pasmo, "jen s volacim znakem"
@@ -164,8 +165,8 @@ static long readBody(HTTPClient& http) {
 // Filtr: parsuji se jen klice, ktere pouzivame, takze JsonDocument zustava maly
 // bez ohledu na to, kolik adsb.fi posle. alt_baro MUSI zustat - nese literal
 // "ground" pro detekci letadla na zemi.
-static void buildFilter(JsonDocument& filter) {
-  JsonObject o = filter["ac"].add<JsonObject>();   // ArduinoJson 7 idiom
+static void fillFields(JsonObject o) {
+  if (o.isNull()) return;
   o["hex"]          = true;
   o["flight"]       = true;
   o["lat"]          = true;
@@ -178,12 +179,68 @@ static void buildFilter(JsonDocument& filter) {
   o["t"]            = true;
   o["r"]            = true;   // registrace - zadarmo v teze odpovedi
   o["squawk"]       = true;
+  o["category"]     = true;   // kategorie vysilace - ikona, kdyz typ chybi
+}
+
+static void buildFilter(JsonDocument& filter) {
+  // Pole letadel muze prijit pod dvema jmeny: adsb.fi a adsb.lol ho posilaji
+  // jako "ac", servery odvozene z ADSBexchange (tar1090 / readsb) jako
+  // "aircraft". Filtr pusti obe, jinak by druhy tvar vysel jako prazdny
+  // dokument a radar by zustal tise prazdny.
+  //
+  // Kazdy obsah se vyplni pres vlastni JsonObject z add<>() - pridani dalsiho
+  // klice do filtru muze zneplatnit JsonObject vzaty driv (ArduinoJson 7).
+  fillFields(filter["ac"].add<JsonObject>());
+  fillFields(filter["aircraft"].add<JsonObject>());
 
   // Neni to uzitecny obsah, ale diagnostika: adsb.fi dava svuj stavovy text do
   // "msg" ("No error" pri uspechu). Filtr ho driv zahazoval, takze firmware
-  // umel rict jen "chybi pole ac" a nic o tom proc. Prida se az nakonec -
-  // pridani klice muze zneplatnit JsonObject vzaty vyse.
+  // umel rict jen "chybi pole ac" a nic o tom proc. Prida se az nakonec.
   filter["msg"] = true;
+}
+
+// --- Stari dat a pauza po chybach (0.8.4) ------------------------------------
+static bool          s_everOk     = false;
+static unsigned long s_lastOkMs   = 0;
+static unsigned long s_blockUntil = 0;
+static bool          s_blocked    = false;
+static uint8_t       s_failCount  = 0;
+static int           s_lastCode   = 0;
+
+unsigned long ADSB_DataAgeMs() { return s_everOk ? millis() - s_lastOkMs : 0xFFFFFFFFUL; }
+bool ADSB_DataStale()  { return ADSB_DataAgeMs() > ADSB_STALE_MS; }
+bool ADSB_DataHidden() { return ADSB_DataAgeMs() > ADSB_HIDE_MS; }
+int  ADSB_LastHttpCode() { return s_lastCode; }
+
+unsigned long ADSB_PauseLeftMs() {
+  if (!s_blocked) return 0;
+  const long left = (long)(s_blockUntil - millis());
+  if (left <= 0) { s_blocked = false; return 0; }
+  return (unsigned long)left;
+}
+
+// Kazda dalsi chyba v rade pauzu zdvojnasobi. Retry-After od serveru ma
+// prednost, kdyz je delsi.
+static void noteFailure(long retryAfterS) {
+  if (s_failCount < 10) s_failCount++;
+  unsigned long pause = ADSB_BACKOFF_BASE_MS << (s_failCount - 1);
+  if (pause > ADSB_BACKOFF_MAX_MS) pause = ADSB_BACKOFF_MAX_MS;
+  if (retryAfterS > 0) {
+    if (retryAfterS > ADSB_RETRY_AFTER_MAX_S) retryAfterS = ADSB_RETRY_AFTER_MAX_S;
+    if ((unsigned long)retryAfterS * 1000UL > pause) pause = (unsigned long)retryAfterS * 1000UL;
+  }
+  s_blockUntil = millis() + pause;
+  s_blocked = true;
+  Serial.printf("ADSB: chyba %d, %u. v rade, pauza %lu s\n",
+                s_lastCode, (unsigned)s_failCount, pause / 1000UL);
+  Status_Set(ST_ADSB, "chyba %d, pauza %lu s", s_lastCode, pause / 1000UL);
+}
+
+static void noteSuccess() {
+  s_everOk = true;
+  s_lastOkMs = millis();
+  s_failCount = 0;
+  s_blocked = false;
 }
 
 bool ADSB_Fetch(double lat, double lon, float radiusKm) {
@@ -196,6 +253,9 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
   // TLS handshake potrebuje ~45 kB interni RAM; bez ni selze uvnitr mbedTLS
   // a navenek to vypada jako hole "HTTP -1". Radeji poll preskocit.
   if (!Net_HeapOk("ADSB")) { Status_Set(ST_ADSB, "malo pameti"); return false; }
+  // Pauza po chybach - neblokuje, jen se tentokrat neptat.
+  if (ADSB_PauseLeftMs() > 0) return false;
+  long retryAfter = 0;
 
   float distNm = radiusKm / KM_PER_NM;
   char url[128];
@@ -219,6 +279,7 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
     if (!http.begin(client, url)) {
       Serial.println("ADSB: begin failed");
       if (attempt < MAX_ATTEMPTS) { delay(200); continue; }
+      noteFailure(0);
       return false;
     }
     // Slusne se predstavit - bezplatne API adsb.fi o to zada.
@@ -231,14 +292,19 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
     http.setUserAgent(HTTP_USER_AGENT);
     http.addHeader("Accept", "application/json");
     // Hlavicka Date je zaloha hodin, kdyz NTP neprojde (viz Clock.h).
-    http.collectHeaders(NET_DATE_HEADER, 1);
+    static const char* WANTED[] = { "Date", "Retry-After" };
+    http.collectHeaders(WANTED, 2);
 
     int code = http.GET();
+    s_lastCode = code > 0 ? code : 0;
     if (code != HTTP_CODE_OK) {
       Serial.printf("ADSB: HTTP %d (pokus %d)\n", code, attempt);
+      if (http.hasHeader("Retry-After")) retryAfter = http.header("Retry-After").toInt();
       http.end();
-      if (attempt < MAX_ATTEMPTS) { delay(200); continue; }
-      Status_Set(ST_ADSB, "HTTP %d", code);
+      // Pretizeny server (429, 5xx) se v temze pokusu znovu nezkousi.
+      const bool overloaded = (code == 429 || code >= 500);
+      if (!overloaded && attempt < MAX_ATTEMPTS) { delay(200); continue; }
+      noteFailure(retryAfter);
       return false;   // nech posledni dobra data
     }
     Net_NoteDate(http);
@@ -250,11 +316,13 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
     if (len < 0) {
       Serial.println("ADSB: cteni tela selhalo");
       if (attempt < MAX_ATTEMPTS) { delay(200); continue; }
+      noteFailure(0);
       return false;
     }
     if (len < 8) {
       Serial.printf("ADSB: kratke telo %ld (pokus %d)\n", len, attempt);
       if (attempt < MAX_ATTEMPTS) { delay(200); continue; }
+      noteFailure(0);
       return false;
     }
 
@@ -265,6 +333,7 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
     while (*head == ' ' || *head == '\r' || *head == '\n' || *head == '\t') head++;
     if (*head != '{') {
       Serial.printf("ADSB: odpoved nezacina JSON objektem, telo[0..120]: %.120s\n", s_body);
+      noteFailure(0);
       Status_Set(ST_ADSB, "neocekavana odpoved");
       return false;
     }
@@ -279,15 +348,20 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
       Serial.printf("ADSB: JSON %s (pokus %d) - drzim poslednich %d\n",
                     err.c_str(), attempt, s_count);
       if (attempt < MAX_ATTEMPTS) { delay(200); continue; }
+      noteFailure(0);
       return false;
     }
 
-    if (!doc["ac"].is<JsonArray>()) {
+    // "ac" (adsb.fi, adsb.lol) nebo "aircraft" (tar1090 / readsb).
+    JsonArrayConst ac = doc["ac"].as<JsonArrayConst>();
+    if (ac.isNull()) ac = doc["aircraft"].as<JsonArrayConst>();
+    if (ac.isNull()) {
       // Rict, CO prislo, ne jen ze to bylo spatne. "msg" je stavovy text
       // serveru, zacatek tela chyti odpovedi, ktere ocekavany tvar nemely
       // nikdy.
-      Serial.printf("ADSB: chybi pole 'ac' - msg: %s\n", doc["msg"] | "(zadne msg)");
+      Serial.printf("ADSB: chybi pole letadel - msg: %s\n", doc["msg"] | "(zadne msg)");
       Serial.printf("ADSB: telo[0..200]: %.200s\n", s_body);
+      noteFailure(0);
       Status_Set(ST_ADSB, "spatny tvar odpovedi");
       return false;   // validni JSON, ale spatny tvar; retry by nepomohl
     }
@@ -303,7 +377,6 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
     const float latr0 = (float)lat * 0.0174532925f;
     const float cosLat0 = cosf(latr0);
 
-    JsonArrayConst ac = doc["ac"].as<JsonArrayConst>();
     int   n = 0;
     int   worstIdx = -1;      // slot s nejvetsi vzdalenosti (jen kdyz je plno)
     float worstD2  = -1.0f;
@@ -365,12 +438,37 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
       cand.hex[sizeof(cand.hex) - 1] = '\0';
       // Kod odpovidace. Jen ctyri osmickove cislice; cokoli jineho zahodime,
       // aby se do porovnani s 7500/7600/7700 nedostal zmetek.
-      const char* sq = plane["squawk"] | "";
-      if (strlen(sq) == 4 && sq[0] >= '0' && sq[0] <= '7') {
-        strncpy(cand.squawk, sq, sizeof(cand.squawk) - 1);
-        cand.squawk[sizeof(cand.squawk) - 1] = '\0';
+      //
+      // Nektere servery ho posilaji jako CISLO misto retezce (7700 bez
+      // uvozovek). `| ""` by z nej udelalo prazdny retezec a nouzovy kod by
+      // propadl - proto se cislo prevede zpet na ctyri cislice.
+      {
+        char sqBuf[8] = "";
+        JsonVariantConst sqv = plane["squawk"];
+        if (sqv.is<const char*>()) {
+          const char* s0 = sqv.as<const char*>();
+          if (s0) { strncpy(sqBuf, s0, sizeof(sqBuf) - 1); sqBuf[sizeof(sqBuf) - 1] = '\0'; }
+        } else if (sqv.is<int>()) {
+          const int v = sqv.as<int>();
+          if (v >= 0 && v <= 7777) snprintf(sqBuf, sizeof(sqBuf), "%04d", v);
+        }
+        bool ok = (strlen(sqBuf) == 4);
+        for (int k = 0; ok && k < 4; k++) ok = (sqBuf[k] >= '0' && sqBuf[k] <= '7');
+        if (ok) {
+          strncpy(cand.squawk, sqBuf, sizeof(cand.squawk) - 1);
+          cand.squawk[sizeof(cand.squawk) - 1] = '\0';
+        }
       }
       copyCallsign(&cand, plane);
+
+      // Kategorie vysilace a z ni (nebo z typu) ikona - jednou tady, ne pri
+      // kazdem prekresleni.
+      {
+        const char* cat = plane["category"] | "";
+        strncpy(cand.cat, cat, sizeof(cand.cat) - 1);
+        cand.cat[sizeof(cand.cat) - 1] = '\0';
+      }
+      cand.icon = PlaneIcon_Classify(cand.type, cand.cat);
 
       // Uzivatelsky filtr (vyskove pasmo, jen s volacim znakem).
       if (!passesFilter(cand)) { s_filteredOut++; continue; }
@@ -403,6 +501,7 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
     // Commitni docasny snimek do ziveho seznamu naraz.
     for (int i = 0; i < n; i++) s_list[i] = s_tmp[i];
     s_count = n;
+    noteSuccess();
     if (dropped) Serial.printf("Letadla: %d (%ld bajtu, %d vzdalenych vynechano)\n",
                                n, len, dropped);
     else         Serial.printf("Letadla: %d (%ld bajtu)\n", n, len);
@@ -412,6 +511,7 @@ bool ADSB_Fetch(double lat, double lon, float radiusKm) {
     else               Status_Set(ST_ADSB, "OK, %d letadel", n);
     return true;
   }
+  noteFailure(retryAfter);
   Status_Set(ST_ADSB, "stahovani selhalo");
   return false;
 }

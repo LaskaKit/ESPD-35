@@ -46,6 +46,24 @@ void UI_TextCenteredIn(const char* text, int x, int w, int cy,
 void UI_TextCenteredBg(const char* text, int cy, uint16_t color, uint16_t bg,
                        uint8_t size);
 
+// Vyplneny vysec mezikruzi (prstence cen a vyroby). Uhly v radianech, 0 =
+// vpravo, kladne po smeru hodinovych rucicek.
+void UI_FillRing(int cx, int cy, int rIn, int rOut, float a0, float a1,
+                 uint16_t color);
+
+// Zmenil se od posledniho dotazu text "HH:MM  12 degC"? Obrazovky, ktere se
+// jinak prekresluji jen pri zmene dat, si tim reknou o prekresleni hlavicky
+// jednou za minutu.
+bool UI_StatusLineChanged();
+
+// Hlavicka datove obrazovky: nadpis vlevo nahore (velikost 2), cas a venkovni
+// teplota vpravo (velikost 1). Stejne jako na obrazovce predpovedi. Volajici
+// si rezervuje pas Layout_ReserveBand(UI_HDR_Y - 2, UI_HDR_H).
+#define UI_HDR_X  10
+#define UI_HDR_Y   6
+#define UI_HDR_H  24
+void UI_DrawHeader(const char* title, uint16_t color);
+
 // Vykresli WiFi QR kod (pro pripojeni k AP). open=true -> sit bez hesla.
 void UI_DrawWifiQR(const char* ssid, const char* password, bool open,
                    int x, int y, int size_px);

@@ -4,9 +4,9 @@
 // =============================================================================
 #include "GeoIP.h"
 #include "Settings.h"
+#include "Net.h"
 
 #include <WiFi.h>
-#include <HTTPClient.h>
 #include <ArduinoJson.h>
 
 #define GEOIP_URL "http://ip-api.com/json/?fields=status,lat,lon,city"
@@ -16,18 +16,11 @@ bool GeoIP_DetectIfNeeded() {
   if (Settings_HasLocation()) return false;
   if (WiFi.status() != WL_CONNECTED) return false;
 
-  HTTPClient http;
-  http.setTimeout(6000);
-  if (!http.begin(GEOIP_URL)) { Serial.println("GeoIP: begin selhal"); return false; }
-  int code = http.GET();
-  if (code != HTTP_CODE_OK) {
-    Serial.printf("GeoIP: HTTP %d\n", code);
-    http.end();
-    return false;
-  }
-
-  String payload = http.getString();
-  http.end();
+  // Pres sdilene Net_GetString(): ip-api.com je obycejne http://, ale telo se
+  // i tak cte pres sink, ktery zvladne chunked a ma strop. Vlastni getString()
+  // tady nemel ani jedno.
+  String payload;
+  if (!Net_GetString(GEOIP_URL, payload, "GeoIP")) return false;
 
   JsonDocument doc;
   if (deserializeJson(doc, payload)) { Serial.println("GeoIP: chyba JSON"); return false; }

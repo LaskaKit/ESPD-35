@@ -28,3 +28,9 @@ bool ScreenPlanes_HandleTap(int x, int y);
 // Je rucne zafixovane letadlo? (Swipe / dlouhy stisk pak nejdriv zrusi vyber.)
 bool ScreenPlanes_DetailOpen();
 void ScreenPlanes_CloseDetail();
+
+// Upozorneni na letadlo poblic (0.8.0). AlertBegin zvoli rozsah, do ktereho se
+// letadlo vejde, a otevre jeho detail; AlertEnd vrati rozsah uzivatele.
+void ScreenPlanes_AlertBegin(const char* hex, float distKm, bool inWindow);
+void ScreenPlanes_AlertEnd();
+bool ScreenPlanes_AlertActive();

@@ -79,11 +79,30 @@ void        Settings_SetWatchCallsign(const char* s);
 
 // --- Obrazovky --------------------------------------------------------------
 //
-// idx je SCREEN_CLOCK_I .. SCREEN_FORECAST_I. Nastaveni je vzdy zapnute -
+// idx je SCREEN_CLOCK_I .. SCREEN_MIX_I. Nastaveni je vzdy zapnute -
 // bez nej by se nedalo dostat zpet k webu, kdyby nekdo vypnul vsechno ostatni.
 bool    Settings_ScreenEnabled(uint8_t idx);
 void    Settings_SetScreenEnabled(uint8_t idx, bool on);
 uint8_t Settings_EnabledCount();            // pocet zapnutych datovych obrazovek
+
+// --- Meteoradar -------------------------------------------------------------
+// Legenda dBZ / mm/h v levem hornim rohu. Kdo stupnici zna, vypnutim uvidi
+// vic uzemi - zmizi i misto, ktere si legenda rezervovala pro popisky mest.
+bool    Settings_MeteoLegend();
+void    Settings_SetMeteoLegend(bool on);
+
+// --- Energie ----------------------------------------------------------------
+// Prirazka k burzovni cene v Kc/MWh (distribuce, regulovane slozky, marze) a
+// DPH v procentech. Obe 0 = displej ukazuje cistou burzovni cenu.
+uint16_t Settings_PriceFee();
+void     Settings_SetPriceFee(uint16_t czkPerMwh);
+uint8_t  Settings_PriceVat();
+void     Settings_SetPriceVat(uint8_t pct);
+
+// Zeme pro obrazovku vyroby: dvoupismenny kod energy-charts ("cz", "sk",
+// "at"...) nebo "eu" pro celou Evropu.
+const char* Settings_MixCountry();
+void        Settings_SetMixCountry(const char* code);
 
 // Automaticke stridani obrazovek v SEKUNDACH. 0 = vypnuto.
 uint16_t Settings_AutoRotateSec();
@@ -120,10 +139,16 @@ void     Settings_SetTopBearing(uint16_t deg);
 // Firmware si je vlastni sam, misto aby je nechal na WiFiManageru: pristupovy
 // bod musi zustat nahore, dokud uzivatel sit opravdu nezada, a portal musi
 // mluvit cesky - obojí vyzaduje, aby udaje patrily nam (viz WiFiPortal.h).
-const char* Settings_WifiSsid();
-const char* Settings_WifiPass();
-bool        Settings_HasWifi();
+// Az WIFI_SLOTS siti (0.8.0). Slot 0 drzi puvodni klice, takze aktualizovana
+// deska svou sit nezapomene.
+const char* Settings_WifiSsid(uint8_t slot = 0);
+const char* Settings_WifiPass(uint8_t slot = 0);
+bool        Settings_HasWifi();                 // aspon jeden slot vyplneny
+// Z portalu: zapamatovat si sit (zname SSID = nove heslo, jinak na prvni misto).
 void        Settings_SetWifi(const char* ssid, const char* pass);
+// Z webu: zapsat jeden slot presne. Prazdne ssid slot vymaze; pass == nullptr
+// ponecha ulozene heslo (stranka ho nikdy nevidi).
+void        Settings_SetWifiSlot(uint8_t slot, const char* ssid, const char* pass);
 void        Settings_ClearWifi();
 
 // --- Heslo spravce ----------------------------------------------------------
@@ -155,3 +180,59 @@ bool Settings_FromJson(JsonObjectConst in);
 void Settings_Tick();
 
 void Settings_ClearAll();
+
+// =============================================================================
+//  Funkce prevzate z petus/MeteoPlaneRadar 0.8.0 - 0.8.5
+// =============================================================================
+
+// --- Meteoradar: CHMU, nebo CHMU masked --------------------------------------
+uint8_t Settings_RadarSource();            // RADAR_SRC_CHMU / RADAR_SRC_CHMU_MASKED
+void    Settings_SetRadarSource(uint8_t src);
+
+// --- Pismo na displeji (CLOCK_FONT_*) ----------------------------------------
+uint8_t Settings_ClockFont();
+void    Settings_SetClockFont(uint8_t f);
+
+// Jazyk displeje i webu: LANG_CS / LANG_SK (Config.h).
+uint8_t Settings_Lang();
+void    Settings_SetLang(uint8_t l);
+
+// --- Barvy vysek letadel -----------------------------------------------------
+// ALT_BANDS_N hranic ve STOPACH (vzestupne) a o jednu barvu vic: pasmo 0 je pod
+// prvni hranici, posledni nad posledni.
+uint16_t Settings_AltBandFt(uint8_t i);              // i = 0..ALT_BANDS_N-1
+bool     Settings_SetAltBandsFt(const uint16_t* b);  // ALT_BANDS_N hodnot; mimo poradi = false
+uint16_t Settings_AltColor(uint8_t band);            // band = 0..ALT_BANDS_N
+void     Settings_SetAltColor(uint8_t band, uint16_t c);
+
+// --- Hlidani bourky ----------------------------------------------------------
+// Se StormOnly je meteoradar ve stridani jen tehdy, kdyz je do StormKm odraz
+// aspon StormDbz.
+bool     Settings_StormOnly();
+void     Settings_SetStormOnly(bool on);
+uint8_t  Settings_StormDbz();
+void     Settings_SetStormDbz(uint8_t dbz);
+uint16_t Settings_StormKm();
+void     Settings_SetStormKm(uint16_t km);
+
+// --- Letadlo poblic a vyhled z okna -----------------------------------------
+// S PlaneAlert se obrazovka Letadla sama nestrida, ale na PlaneAlertSec sekund
+// naskoci, kdyz se letadlo priblizi na PlaneAlertKm - nebo proleti vyhledem
+// z okna, ktery ma prednost i pred blizsim letadlem.
+bool     Settings_PlaneAlert();
+void     Settings_SetPlaneAlert(bool on);
+uint16_t Settings_PlaneAlertKm();
+void     Settings_SetPlaneAlertKm(uint16_t km);
+uint16_t Settings_PlaneAlertSec();
+void     Settings_SetPlaneAlertSec(uint16_t s);
+bool     Settings_WindowOn();
+void     Settings_SetWindowOn(bool on);
+uint16_t Settings_WindowAz();              // azimut stredu okna = Settings_TopBearing()
+uint16_t Settings_WindowWidth();           // cela sirka vyhledu ve stupnich
+void     Settings_SetWindowWidth(uint16_t deg);
+uint16_t Settings_WindowKm();
+void     Settings_SetWindowKm(uint16_t km);
+
+// --- Home Assistant ----------------------------------------------------------
+bool     Settings_HaEnabled();
+void     Settings_SetHaEnabled(bool on);

@@ -8,11 +8,11 @@
 //    - the current temperature and precipitation on the clock screen,
 //    - sunrise and sunset, which drive the automatic night mode.
 //
-//  Times are requested as plain UTC epochs (timezone=UTC, timeformat=unixtime)
-//  rather than local ones. Our own clock is a UTC epoch too (seeded from the
-//  HTTP Date header), so everything can be compared directly and localtime_r()
-//  does the conversion for display exactly once. Asking Open-Meteo for local
-//  times as well is how you end up an hour out twice a year.
+//  Times are requested as plain UTC epochs (timeformat=unixtime) rather than
+//  local ones. Our own clock is a UTC epoch too, so everything can be compared
+//  directly and localtime_r() does the conversion for display exactly once.
+//  timezone=auto only moves the DAILY boundaries to local midnight and returns
+//  utc_offset_seconds, which sets the device's time zone (TimeZone.h).
 //
 //  Prevzato z petus/MeteoPlaneRadar v0.6.1 (autor Petr / chiptron.cz)
 //  a upraveno pro ESPD-3.5 (ILI9488 480x320, SPI).
@@ -50,6 +50,8 @@ void Forecast_Invalidate();
 bool Forecast_Valid();
 int  Forecast_HourCount();
 const FcHour* Forecast_Hours();
+// Dny od DNESKA: index 0 je dnesek, 1 zitrek... (Do teto verze byl index 0
+// zitrek - kdo pocita dny z tohoto pole, musel se zkontrolovat.)
 int  Forecast_DayCount();
 const FcDay*  Forecast_Days();
 

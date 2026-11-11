@@ -27,7 +27,9 @@
 //  Volny pruh nahore (y < 46) a dole (y 284..292) slouzi k prepnuti obrazovky
 //  dlouhym stiskem - viz ScreenSettings_HitsControl().
 // =============================================================================
+#include "Lang.h"     // LT(): cesky / slovensky, s diakritikou i bez
 #include "ScreenSettings.h"
+#include "Layout.h"
 #include "Settings.h"
 #include "WiFiPortal.h"
 #include "UI.h"
@@ -208,7 +210,7 @@ static void drawButton(int bx, int by, int bw, int bh, uint16_t bg,
   gfx->fillRoundRect(bx, by, bw, bh, 6, bg);
   gfx->drawRoundRect(bx, by, bw, bh, 6, C_WHITE);
   gfx->setTextSize(size); gfx->setTextColor(fg);
-  int tw = strlen(label) * 6 * size;
+  int tw = Layout_TextW(label, size);
   int lx = bx + (bw - tw) / 2; if (lx < bx + 2) lx = bx + 2;
   gfx->setCursor(lx, by + (bh - 8 * size) / 2);
   gfx->print(label);
@@ -231,10 +233,10 @@ void ScreenSettings_Draw() {
   gfx->fillScreen(C_BLACK);
 
   // --- Titulek ---
-  UI_TextCentered("Nastaveni", 6, C_CYAN, 2);
+  UI_TextCentered(T(S_SETTINGS), 6, C_CYAN, 2);
   {
     char v[40];
-    snprintf(v, sizeof(v), "laskakit.cz  |  verze %s", FW_VERSION);
+    snprintf(v, sizeof(v), "laskakit.cz  |  %s %s", LT("verze", "verze", "verzia", "verzia"), FW_VERSION);
     UI_TextCentered(v, 28, C_GRAY, 1);
   }
 
@@ -246,9 +248,11 @@ void ScreenSettings_Draw() {
   // a divi se, ze mu vecer "nedrzi" hodnota nastavena rano.
   gfx->setCursor(SL_X, 46);
   if (Settings_NightAuto())
-    gfx->print(Settings_IsNight() ? "Jas (noc, automaticky)" : "Jas (den, automaticky)");
+    gfx->print(Settings_IsNight()
+               ? LT("Jas (noc, automaticky)", "Jas (noc, automaticky)", "Jas (noc, automaticky)", "Jas (noc, automaticky)")
+               : LT("Jas (den, automaticky)", "Jas (den, automaticky)", "Jas (den, automaticky)", "Jas (deň, automaticky)"));
   else
-    gfx->print(Settings_IsNight() ? "Jas (noc)" : "Jas (den)");
+    gfx->print(Settings_IsNight() ? "Jas (noc)" : LT("Jas (den)", "Jas (den)", "Jas (den)", "Jas (deň)"));
   {
     int pct = Settings_Backlight();
     gfx->drawRoundRect(SL_X, SL_Y, SL_W, SL_H, 4, C_GRAY);
@@ -261,7 +265,7 @@ void ScreenSettings_Draw() {
 
   // Orientace mapy
   gfx->setTextSize(1); gfx->setTextColor(C_WHITE);
-  gfx->setCursor(SL_X, 100); gfx->print("Nahore (smer pohledu z okna)");
+  gfx->setCursor(SL_X, 100); gfx->print(LT("Nahore (smer pohledu z okna)", "Nahoře (směr pohledu z okna)", "Hore (smer pohladu z okna)", "Hore (smer pohľadu z okna)"));
   drawCompass();
   drawButton(ROT_MINUS_X, ROT_Y, ROT_BTN_W, ROT_H, C_GRAY, "-", 2);
   drawButton(ROT_PLUS_X,  ROT_Y, ROT_BTN_W, ROT_H, C_GRAY, "+", 2);
@@ -274,7 +278,7 @@ void ScreenSettings_Draw() {
 
   // Jednotky
   drawButton(UNITS_X, UNITS_Y, UNITS_W, UNITS_H, C_CYAN,
-             Settings_MetricUnits() ? "Jednotky: metricke" : "Jednotky: letecke", 1);
+             Settings_MetricUnits() ? T(S_UNITS_METRIC) : T(S_UNITS_AVIA), 1);
 
   // Poloha
   {
@@ -286,46 +290,47 @@ void ScreenSettings_Draw() {
     gfx->setCursor(SL_X, 242); gfx->print(line);
     gfx->setTextColor(C_GRAY);
     gfx->setCursor(SL_X, 256);
-    gfx->print(Settings_HasLocation() ? "(ulozena)" : "(vychozi)");
+    gfx->print(Settings_HasLocation() ? LT("(ulozena)", "(uložená)", "(ulozena)", "(uložená)")
+                                       : LT("(vychozi)", "(výchozí)", "(predvolena)", "(predvolená)"));
   }
 
   // ------------------------------- PRAVY SLOUPEC ----------------------------
   {
     gfx->setTextSize(1); gfx->setTextColor(C_GRAY);
-    gfx->setCursor(BTN_X, 46); gfx->print("Sit");
+    gfx->setCursor(BTN_X, 46); gfx->print(LT("Sit", "Síť", "Siet", "Sieť"));
     gfx->setTextColor(WiFi_IsConnected() ? C_GREEN : C_YELLOW);
     gfx->setCursor(BTN_X, 60); gfx->print(WiFi_SSID());
     gfx->setTextColor(C_WHITE);
     gfx->setCursor(BTN_X, 74); gfx->print(WiFi_IP());
   }
 
-  drawButton(BTN_X, WIFI_Y, BTN_W, BTN_H, C_YELLOW, "Znovu nastavit WiFi", 1);
+  drawButton(BTN_X, WIFI_Y, BTN_W, BTN_H, C_YELLOW, LT("Znovu nastavit WiFi", "Znovu nastavit WiFi", "Znova nastavit WiFi", "Znova nastaviť WiFi"), 1);
 
   // Kde najit zbytek nastaveni. Neni to tlacitko - je to adresa, kterou si ma
   // uzivatel opsat. Aktualizace firmwaru, poloha, filtry, obrazovky i zaloha
   // jsou od 0.5.0 tam, protoze na 480x320 se to ovladat prstem neda.
   {
     gfx->setTextSize(1); gfx->setTextColor(C_GRAY);
-    gfx->setCursor(BTN_X, OTA_Y + 2);  gfx->print("Vsechno ostatni nastaveni");
-    gfx->setCursor(BTN_X, OTA_Y + 16); gfx->print("(vcetne aktualizace firmwaru)");
-    gfx->setCursor(BTN_X, OTA_Y + 30); gfx->print("v prohlizeci na adrese:");
+    gfx->setCursor(BTN_X, OTA_Y + 2);  gfx->print(LT("Vsechno ostatni nastaveni", "Všechno ostatní nastavení", "Vsetky ostatne nastavenia", "Všetky ostatné nastavenia"));
+    gfx->setCursor(BTN_X, OTA_Y + 16); gfx->print(LT("(vcetne aktualizace firmwaru)", "(včetně aktualizace firmwaru)", "(vratane aktualizacie firmveru)", "(vrátane aktualizácie firmvéru)"));
+    gfx->setCursor(BTN_X, OTA_Y + 30); gfx->print(LT("v prohlizeci na adrese:", "v prohlížeči na adrese:", "v prehliadaci na adrese:", "v prehliadači na adrese:"));
     gfx->setTextColor(C_CYAN);
     gfx->setCursor(BTN_X, OTA_Y + 48);
     if (WiFi_IsConnected()) gfx->print("http://" WEB_HOSTNAME ".local/");
     else                    gfx->print("http://" PORTAL_IP "/");
     gfx->setTextColor(C_DKGRAY);
     gfx->setCursor(BTN_X, OTA_Y + 62);
-    if (WiFi_IsConnected()) { gfx->print("nebo http://"); gfx->print(WiFi_IP()); }
+    if (WiFi_IsConnected()) { gfx->print(LT("nebo", "nebo", "alebo", "alebo")); gfx->print(" http://"); gfx->print(WiFi_IP()); }
   }
 
   // --- Tovarni reset ---
   // Mensi nez ostatni tlacitka a odsazeny, aby na nej nesla trefit ruka
   // mirici na "Firmware update". Druhe klepnuti (do RESET_CONFIRM_MS) potvrdi.
   if (s_resetArmed && !resetArmExpired()) {
-    drawButton(RST_X, RST_Y, RST_W, RST_H, C_YELLOW, "Opravdu? Klepni", 1);
-    UI_TextCenteredIn("Smaze WiFi i nastaveni", BTN_X, BTN_W,
+    drawButton(RST_X, RST_Y, RST_W, RST_H, C_YELLOW, LT("Opravdu? Klepni", "Opravdu? Klepni", "Naozaj? Tukni", "Naozaj? Ťukni"), 1);
+    UI_TextCenteredIn(LT("Smaze WiFi i nastaveni", "Smaže WiFi i nastavení", "Zmaze WiFi aj nastavenia", "Zmaže WiFi aj nastavenia"), BTN_X, BTN_W,
                       RST_Y + RST_H + 4, C_YELLOW, 1);
   } else {
-    drawButton(RST_X, RST_Y, RST_W, RST_H, C_RED, "Tovarni reset", 1, C_WHITE);
+    drawButton(RST_X, RST_Y, RST_W, RST_H, C_RED, LT("Tovarni reset", "Tovární reset", "Tovarensky reset", "Továrenský reset"), 1, C_WHITE);
   }
 }

@@ -60,14 +60,14 @@
 
 // Tecky prepinani obrazovek. Sirka se odvozuje od poctu obrazovek, ktery zna
 // jen .ino - proto se sem predava pri rezervaci. Konstanta nize je nejhorsi
-// pripad (pet obrazovek pri LY_DOTS_GAP), aby self-test kontroloval to, co
+// pripad (sedm obrazovek pri LY_DOTS_GAP), aby self-test kontroloval to, co
 // nastane po rozsireni, ne jen dnesni stav.
 #define LY_DOTS        308                 // STRED y
 // Polomer tecky. Od 0.4.0 mensi (bylo 6) - indikator ma ukazovat, kde jste,
 // ne poutat pozornost.
 #define LY_DOTS_R        4
 #define LY_DOTS_GAP     20
-#define LY_DOTS_MAX_N    5
+#define LY_DOTS_MAX_N    7
 #define LY_DOTS_HALF   (LY_DOTS_GAP * LY_DOTS_MAX_N / 2)
 #define LY_DOTS_X      (LCD_WIDTH / 2 - LY_DOTS_HALF)
 #define LY_DOTS_W      (LY_DOTS_HALF * 2)

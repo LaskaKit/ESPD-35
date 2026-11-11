@@ -7,6 +7,7 @@
 //  Nove ramce se stahuji jen kdyz se zobrazuje posledni snimek (v pauze),
 //  aby se animace nepresekavala. Behem stahovani "Nacitam animaci...".
 // =============================================================================
+#include "Lang.h"     // LT(): cesky / slovensky, s diakritikou i bez
 #include "ScreenWeather.h"
 #include "EuBorder.h"
 #include "Lang.h"
@@ -21,6 +22,7 @@
 #include <PNGdec.h>
 #include <math.h>
 #include <esp_heap_caps.h>
+#include <string.h>
 
 #define ANIM_FRAMES  CHMU_ANIM_MAX   // 6
 
@@ -50,9 +52,16 @@ static int s_imgW = 600, s_imgH = 480;
 static int s_dataX1 = 100000, s_dataY0 = -1;   // hranice DAT (mimo = titulek/skala)
 static String s_status = "Start...";
 static bool s_wide = false;              // snimek moc siroky pro PNGdec
+static bool s_stale = false;             // posledni stazeni selhalo, zobrazena starsi sada
+
+// Kdy se ma zkusit dalsi stazeni. Po uspechu za METEO_PERIOD_MS, po neuspechu
+// uz za METEO_RETRY_MS. Drive se pri prazdne animaci zkousel index CHMU v kazdem
+// pruchodu smyckou, tedy kazdou sekundu, a po vypadku to tak jelo dokola.
+static unsigned long s_fetchEvery = 0;
 
 struct Crop { int x1, y1, x2, y2; };
-static Crop s_crop;
+static Crop s_crop;     // POHLED: vystredeny na uzivatele, muze presahovat snimek
+static Crop s_clip;     // jeho prunik se snimkem - jen ten se dekoduje a uklada
 static uint16_t* s_lineBuf = nullptr;
 static int       s_lineCap = 0;
 
@@ -86,13 +95,26 @@ static void makeCrop(double lat, double lon, float radiusKm) {
   int y1 = latToY(lat + degLat), y2 = latToY(lat - degLat);
   if (x2 < x1) { int t = x1; x1 = x2; x2 = t; }
   if (y2 < y1) { int t = y1; y1 = y2; y2 = t; }
-  s_crop.x1 = clampI(x1, 0, s_imgW - 1);
-  s_crop.x2 = clampI(x2, 0, s_imgW - 1);
-  s_crop.y1 = clampI(y1, 0, s_imgH - 1);
-  s_crop.y2 = clampI(y2, 0, s_imgH - 1);
+  // POHLED se NEOREZAVA na okraj snimku. Orez ho prestal centrovat na
+  // uzivatele, jenze zamerny kriz se dal kreslil doprostred displeje - u Chebu
+  // na 200 km to delalo pres 80 km stranou, u Ostravy kolem 10 km. Cast mimo
+  // snimek se vykresli cerne (blitCrop) a kriz tak vzdy sedi na skutecnou polohu.
+  //
+  // Ulozi se ale jen PRUNIK se snimkem (s_clip): sest ramcu celeho pohledu
+  // "cela CR" by v PSRAM zabralo kolem 5 MB, z toho velkou cast cerne.
+  s_crop.x1 = x1;
+  s_crop.x2 = x2;
+  s_crop.y1 = y1;
+  s_crop.y2 = y2;
+  s_clip.x1 = clampI(x1, 0, s_imgW - 1);
+  s_clip.x2 = clampI(x2, 0, s_imgW - 1);
+  s_clip.y1 = clampI(y1, 0, s_imgH - 1);
+  s_clip.y2 = clampI(y2, 0, s_imgH - 1);
 }
 static int cropW() { return s_crop.x2 - s_crop.x1 + 1; }
 static int cropH() { return s_crop.y2 - s_crop.y1 + 1; }
+static int clipW() { return s_clip.x2 - s_clip.x1 + 1; }
+static int clipH() { return s_clip.y2 - s_clip.y1 + 1; }
 
 static void borderProject(float lat, float lon, int* sx, int* sy) {
   int srcX = lonToX(lon), srcY = latToY(lat);
@@ -102,29 +124,36 @@ static void borderProject(float lat, float lon, int* sx, int* sy) {
 
 static int pngDraw(PNGDRAW* d) {
   int srcY = d->y;
-  if (srcY < s_crop.y1 || srcY > s_crop.y2) return 1;
+  if (srcY < s_clip.y1 || srcY > s_clip.y2) return 1;
   if (!s_crop565 || !s_lineBuf) return 1;
   png.getLineAsRGB565(d, s_lineBuf, PNG_RGB565_LITTLE_ENDIAN, 0xffffffff);
-  const int cw = cropW();
-  uint16_t* row = s_crop565 + (int64_t)(srcY - s_crop.y1) * cw;
+  const int cw = clipW();
+  uint16_t* row = s_crop565 + (int64_t)(srcY - s_clip.y1) * cw;
   for (int i = 0; i < cw; i++) {
-    int srcX = clampI(s_crop.x1 + i, 0, s_imgW - 1);
+    const int srcX = s_clip.x1 + i;
     // Mimo oblast dat (titulek nahore, skala vpravo v PNG) = cerna.
     row[i] = (srcX > s_dataX1 || srcY < s_dataY0) ? 0x0000 : s_lineBuf[srcX];
   }
   return 1;
 }
 
-// Roztahne aktualni vyrez (s_crop565) pres celou obrazovku (nearest neighbour).
+// Roztahne POHLED pres celou obrazovku (nearest neighbour). Ulozeny je jen
+// jeho prunik se snimkem (s_clip); co lezi mimo, je cerne.
 static void blitCrop() {
   if (!s_crop565) return;
   const int cw = cropW(), ch = cropH();
+  const int kw = clipW();
   for (int dy = 0; dy < LCD_HEIGHT; dy++) {
-    int srcRow = clampI((int)((int64_t)dy * ch / LCD_HEIGHT), 0, ch - 1);
-    const uint16_t* row = s_crop565 + (int64_t)srcRow * cw;
+    const int srcY = s_crop.y1 + (int)((int64_t)dy * ch / LCD_HEIGHT);
+    if (srcY < s_clip.y1 || srcY > s_clip.y2) {
+      gfx->drawFastHLine(0, dy, LCD_WIDTH, 0x0000);
+      continue;
+    }
+    const uint16_t* row = s_crop565 + (int64_t)(srcY - s_clip.y1) * kw;
     for (int dx = 0; dx < LCD_WIDTH; dx++) {
-      int srcCol = clampI((int)((int64_t)dx * cw / LCD_WIDTH), 0, cw - 1);
-      gfx->drawPixel(dx, dy, row[srcCol]);
+      const int srcX = s_crop.x1 + (int)((int64_t)dx * cw / LCD_WIDTH);
+      gfx->drawPixel(dx, dy, (srcX < s_clip.x1 || srcX > s_clip.x2)
+                             ? 0x0000 : row[srcX - s_clip.x1]);
     }
   }
 }
@@ -156,7 +185,7 @@ static bool rebuildCrops() {
   if (!s_lineBuf) { s_frameCount = 0; return false; }
 
   makeCrop(viewLat(), viewLon(), viewRadiusKm());
-  int need = cropW() * cropH();
+  int need = clipW() * clipH();
 
   int okc = 0;
   for (int f = 0; f < cnt; f++) {
@@ -177,14 +206,42 @@ static bool rebuildCrops() {
   return okc > 0;
 }
 
-// Stazeni ramcu + sestaveni (blokujici). Behem toho hlaska na displeji.
+// Stazeni ramcu + sestaveni (blokujici).
+//
+// Kdyz uz nejaka animace je, displej NEZCERNA. Drive se kazdych pet minut na
+// nekolik sekund objevila cerna obrazovka s "Nacitam animaci..." - nove zustane
+// posledni snimek a pod indikatorem se objevi jen mala zluta poznamka. Kdyz
+// stazeni selze, dosavadni snimky se nezahodi a overlay rekne, ze jsou starsi.
 static void loadAndBuild() {
-  gfx->fillScreen(C_BLACK);
-  UI_TextCentered("Nacitam animaci...", LCD_HEIGHT / 2, C_WHITE, 2);
-  gfx->flush();
+  const bool haveOld = (s_frameCount > 0);
+  if (haveOld) {
+    // Canvas jeste drzi posledni vykresleny snimek - staci pripsat poznamku.
+    gfx->fillRect(LCD_WIDTH / 2 - 90, 32, 180, 12, C_BLACK);
+    UI_TextCenteredIn(T(S_LOADING_NEWER), 0, LCD_WIDTH, 34, C_YELLOW, 1);
+    gfx->flush();
+  } else {
+    gfx->fillScreen(C_BLACK);
+    UI_TextCentered(LT("Nacitam animaci...", "Načítám animaci...", "Nacitavam animaciu...", "Načítavam animáciu..."), LCD_HEIGHT / 2, C_WHITE, 2);
+    gfx->flush();
+  }
+
   int n = CHMU_FetchAnim(ANIM_FRAMES);
-  if (n > 0) rebuildCrops(); else s_frameCount = 0;
-  s_status = (s_frameCount > 0) ? "OK" : (s_wide ? "snimek moc siroky" : "Chyba stahovani");
+  bool ok = (n > 0) && rebuildCrops();
+  if (ok) {
+    s_stale = false;
+    s_fetchEvery = METEO_PERIOD_MS;
+  } else if (haveOld && !s_wide && s_frameCount > 0) {
+    // Dekodovane vyrezy jsou oddelene od stazenych PNG, takze je lze ukazovat
+    // dal, i kdyz nove stazeni nedopadlo.
+    s_stale = true;
+    s_fetchEvery = METEO_RETRY_MS;
+  } else {
+    s_frameCount = 0;
+    s_fetchEvery = METEO_RETRY_MS;
+  }
+  s_status = (s_frameCount > 0) ? "OK"
+           : (s_wide ? T(S_FRAME_WIDE)
+                     : LT("Chyba stahovani", "Chyba stahování", "Chyba stahovania", "Chyba sťahovania"));
 }
 
 // -----------------------------------------------------------------------------
@@ -198,13 +255,19 @@ static void drawOverlay() {
   // Legenda intenzity srazek - dBZ / mm/h (vlevo nahore).
   // Barvy prevzate ze SKUTECNE palety CHMU (reflektivitni blok, indexy 182-193),
   // takze sedi s mapou. Hodnoty mm/h prepocteny z dBZ (Marshall-Palmer).
-  {
+  // Ctyri nizsi hodnoty opraveny v 0.8.5 podle barevne skaly CHMU
+  // (scl-dbzmmh.png) overene na skutecnych snimcich.
+  // Jde vypnout ve webovem nastaveni - kdo stupnici zna, uvidi vic uzemi.
+  if (Settings_MeteoLegend()) {
     static const uint16_t COL[6] = { 0xA000, 0xF800, 0xFC20, 0xE6E0, 0x05E0, 0x001F };
-    static const char*    LBL[6] = { ">56 / >100", "52 / 65", "46 / 27", "40 / 12", "32 / 3.6", "20 / <1" };
+    static const char*    LBL[6] = { ">56 / >100", "52 / 65", "44 / 21", "36 / 6.5", "24 / 1.2", "12 / 0.2" };
     const int lx = 4, ly = 4, boxW = 96, boxH = 12 + 6 * 13 + 2;
     gfx->fillRect(lx - 2, ly - 2, boxW, boxH, C_BLACK);   // podklad kvuli citelnosti
     gfx->setTextSize(1); gfx->setTextColor(C_GRAY);
-    gfx->setCursor(lx, ly); gfx->print("dBZ / mm/h");
+    // Varianta "masked" (0.8.0) ma stejnou paletu, jen bledsi odstiny tam,
+    // kde srazky nedopadaji na zem - nadpis rika, kterou se prave cte.
+    if (CHMU_Masked()) { gfx->setTextColor(C_CYAN); gfx->setCursor(lx, ly); gfx->print("masked dBZ/mm/h"); }
+    else               { gfx->setCursor(lx, ly); gfx->print("dBZ / mm/h"); }
     for (int i = 0; i < 6; i++) {
       int ry = ly + 12 + i * 13;
       gfx->fillRect(lx, ry, 9, 9, COL[i]);
@@ -219,7 +282,7 @@ static void drawOverlay() {
     int n = s_frameCount > 0 ? s_frameCount : 1;
     int minAgo = (n - 1 - s_curFrame) * 5;
     char lbl[16];
-    if (minAgo <= 0) snprintf(lbl, sizeof(lbl), "nyni");
+    if (minAgo <= 0) snprintf(lbl, sizeof(lbl), "%s", T(S_NOW));
     else             snprintf(lbl, sizeof(lbl), "-%d min", minAgo);
     gfx->fillRect(cx - 52, 2, 104, 30, C_BLACK);   // podklad
     int gap = 16, totalW = (n - 1) * gap, sx0 = cx - totalW / 2, dy = 9;
@@ -231,10 +294,17 @@ static void drawOverlay() {
     UI_TextCenteredIn(lbl, 0, LCD_WIDTH, 20, C_CYAN, 1);
   }
 
+  // Stazeni nevyslo a zobrazuje se predchozi sada - rict to, jinak by
+  // hodinu stara animace vypadala jako aktualni.
+  if (s_stale) {
+    gfx->fillRect(LCD_WIDTH / 2 - 110, 32, 220, 12, C_BLACK);
+    UI_TextCenteredIn(T(S_OLD_DATA), 0, LCD_WIDTH, 34, C_YELLOW, 1);
+  }
+
   // Rozsah + indikator (vlevo dole) s podkladem.
   gfx->fillRect(2, LCD_HEIGHT - 26, 72, 24, C_BLACK);
   char rbuf[16];
-  if (wholeCountry()) snprintf(rbuf, sizeof(rbuf), "cela CR");
+  if (wholeCountry()) snprintf(rbuf, sizeof(rbuf), "%s", LT("cela CR", "celá ČR", "cela CR", "celá ČR"));
   else                snprintf(rbuf, sizeof(rbuf), "%.0f km", currentRange());
   gfx->setTextSize(1); gfx->setTextColor(C_YELLOW);
   gfx->setCursor(4, LCD_HEIGHT - 22); gfx->print(rbuf);
@@ -264,7 +334,7 @@ void ScreenWeather_ChangeRange(int dir) {
 }
 
 bool ScreenWeather_Tick() {
-  if (WiFi.status() != WL_CONNECTED) { s_status = "Ceka na WiFi"; return false; }
+  if (WiFi.status() != WL_CONNECTED) { s_status = T(S_WIFI_WAIT); return false; }
   unsigned long now = millis();
 
   // Zmena rozsahu -> jen znovu orezat (ramce uz stazene).
@@ -274,15 +344,17 @@ bool ScreenWeather_Tick() {
     return true;
   }
 
-  // Prvni nacteni.
+  // Prvni nacteni - a po neuspechu dalsi pokus az za METEO_RETRY_MS, ne
+  // v kazdem pruchodu smyckou.
   if (s_frameCount == 0) {
+    if (s_lastFetch && now - s_lastFetch < s_fetchEvery) return false;
     loadAndBuild();
     s_lastFetch = now; s_curFrame = 0; s_gap = false; s_lastStep = now;
     return true;
   }
 
   // Periodicka obnova - jen kdyz jsme v pauze (zobrazuje se posledni snimek).
-  if (s_gap && (now - s_lastFetch >= 300000UL)) {
+  if (s_gap && (now - s_lastFetch >= s_fetchEvery)) {
     loadAndBuild();
     s_lastFetch = now; s_curFrame = 0; s_gap = false; s_lastStep = now;
     return true;
@@ -314,11 +386,14 @@ void ScreenWeather_Draw() {
   Layout_Begin();
   Layout_Reserve(LY_DOTS_X, LY_DOTS_Y0, LY_DOTS_W, LY_DOTS_H);  // tecky obrazovek
   Layout_Reserve(2, LCD_HEIGHT - 26, 72, 24);        // rozsah VCETNE svych tecek
-  Layout_Reserve(2, 2, 96, 92);                      // legenda intenzity
+  // Vypnuta legenda nesmi drzet svuj obdelnik - pixely by se sice uvolnily,
+  // ale popisky mest by se tomu mistu dal vyhybaly a vypnuti by nic nepridalo.
+  if (Settings_MeteoLegend()) Layout_Reserve(2, 2, 96, 92);   // legenda intenzity
   Layout_Reserve(LCD_WIDTH / 2 - 52, 2, 104, 30);    // indikator snimku (horni stred)
+  if (s_stale) Layout_Reserve(LCD_WIDTH / 2 - 110, 32, 220, 12);  // poznamka o starych datech
 
   if (s_frameCount == 0) {
-    UI_TextCentered("Meteoradar CHMU", LCD_HEIGHT / 2 - 20, C_WHITE, 2);
+    UI_TextCentered(LT("Meteoradar CHMU", "Meteoradar ČHMÚ", "Meteoradar CHMU", "Meteoradar ČHMÚ"), LCD_HEIGHT / 2 - 20, C_WHITE, 2);
     UI_TextCentered(s_wide ? T(S_FRAME_WIDE) : s_status.c_str(), LCD_HEIGHT / 2 + 6, C_YELLOW, 2);
     return;
   }
@@ -350,4 +425,11 @@ void ScreenWeather_Draw() {
   }
 
   drawOverlay();
+}
+
+void ScreenWeather_SourceChanged() {
+  s_frameCount = 0;
+  s_lastFetch  = 0;
+  s_stale      = false;
+  s_fetchEvery = 0;
 }

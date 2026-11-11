@@ -5,7 +5,10 @@
 #pragma once
 #include <Arduino.h>
 
-#define CHMU_INDEX_URL "https://opendata.chmi.cz/meteorology/weather/radar/composite/maxz/png/"
+#define CHMU_INDEX_URL        "https://opendata.chmi.cz/meteorology/weather/radar/composite/maxz/png/"
+// Tentyz kompozit porovnany s merenim ve 2 km (0.8.0): plnou barvou jen
+// srazky, ktere dopadaji na zem.
+#define CHMU_INDEX_URL_MASKED "https://opendata.chmi.cz/meteorology/weather/radar/composite/maxz/png_masked/"
 
 // Geograficke ohraniceni CELEHO obrazku PNG (dle dokumentace CHMU).
 //   z.d. 11,267 - 20,770 ; z.s. 48,047 - 52,167
@@ -25,12 +28,17 @@
 
 void        CHMU_SetPollFn(void (*fn)());
 
+// Zdroj: cely kompozit, nebo "masked" (0.8.0). Plati pro animaci.
+void        CHMU_SetMasked(bool masked);
+bool        CHMU_Masked();
+
+// Jediny nejnovejsi snimek do bufferu volajiciho - pro hlidani bourky.
+// name dostane nazev souboru (z nej cas snimku).
+bool        CHMU_FetchLatest(bool masked, uint8_t* buf, size_t cap, size_t* outSize, String* name);
+String      CHMU_AnimName(int i);                        // nazev souboru ramce i
+String      CHMU_TimeTextFromName(const String& name);   // HH:MM mistniho casu
+
 // --- Jeden (nejnovejsi) snimek ---
-bool        CHMU_FetchLatest();
-uint8_t*    CHMU_Data();
-size_t      CHMU_DataSize();
-bool        CHMU_HasSnapshot();
-String      CHMU_SnapshotTimeText();
 
 // --- Animace: nejnovejsich wantN ramcu (5 min krok) ---
 // Vraci pocet stazenych ramcu. Ramce jsou serazene 0 = nejstarsi ... N-1 = nyni.

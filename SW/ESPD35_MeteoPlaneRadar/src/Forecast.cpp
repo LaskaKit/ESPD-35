@@ -4,6 +4,7 @@
 //
 // =============================================================================
 #include "Forecast.h"
+#include "TimeZone.h"
 #include "Net.h"
 #include "Settings.h"
 #include "Outside.h"
@@ -33,7 +34,7 @@ static bool  s_aqOk = false;
 static int   s_aqi = -1;
 static float s_pm25 = 0, s_pm10 = 0;
 static float s_pollen = -1;
-static const char* s_pollenWorst = "";
+static int s_pollenWorst = -1;   // index do POLLEN_NAME, -1 = zadny
 static unsigned long s_aqLastTry = 0;
 static bool          s_aqEverTried = false;
 
@@ -71,9 +72,14 @@ static bool fetchForecast() {
     "&hourly=temperature_2m,precipitation,weather_code,wind_speed_10m"
     "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,"
     "wind_speed_10m_max,sunrise,sunset"
-    "&timeformat=unixtime&timezone=UTC&forecast_hours=%d&forecast_days=%d",
+    "&timeformat=unixtime&timezone=auto&forecast_hours=%d&forecast_days=%d",
     FORECAST_URL, Settings_Lat(), Settings_Lon(),
-    FORECAST_HOURS, FORECAST_DAYS + 1);
+    FORECAST_HOURS, FORECAST_DAYS);
+  // timezone=auto: casy zustavaji UTC epochy (timeformat=unixtime), ale DENNI
+  // hodnoty se pocitaji od mistni pulnoci a odpoved nese utc_offset_seconds pro
+  // zadane souradnice. S timezone=UTC se denni minima a maxima pocitala pres
+  // UTC dny, tedy v lete od dvou rano do dvou rano. Posun z odpovedi navic
+  // nastavi casove pasmo desky - viz TimeZone.h.
 
   String body;
   if (!Net_GetString(url, body, "PREDPOVED")) {
@@ -85,6 +91,7 @@ static bool fetchForecast() {
   // and on a device with 8 MB of PSRAM but very little internal RAM it is the
   // parse that hurts, not the download.
   JsonDocument filter;
+  filter["utc_offset_seconds"] = true;
   filter["current"]["temperature_2m"] = true;
   filter["current"]["precipitation"]  = true;
   filter["current"]["weather_code"]   = true;
@@ -103,6 +110,13 @@ static bool fetchForecast() {
                                              DeserializationOption::Filter(filter));
   body = String();                 // free the payload before touching anything else
   if (err) { Serial.printf("PREDPOVED: JSON %s\n", err.c_str()); return false; }
+
+  // Casove pasmo podle polohy. Deska odvezena do Ameriky by jinak ukazovala
+  // prazsky cas a popisovala predpoved prazskymi hodinami.
+  {
+    JsonVariantConst off = doc["utc_offset_seconds"];
+    if (!off.isNull()) TimeZone_SetOffset(off.as<int>());
+  }
 
   // --- current ---
   JsonObjectConst cur = doc["current"];
@@ -136,8 +150,8 @@ static bool fetchForecast() {
   }
 
   // --- daily ---
-  // Index 0 is today. The screen shows the days AFTER today, so start at 1 -
-  // "today" is already covered by the hourly rows above it.
+  // Index 0 je DNESEK. (Do teto verze zacinal index 0 zitrkem - obrazovka
+  // predpovedi ted dnesek ukazuje jako vlastni radek.)
   JsonArrayConst dt  = doc["daily"]["time"];
   JsonArrayConst dC  = doc["daily"]["weather_code"];
   JsonArrayConst dMx = doc["daily"]["temperature_2m_max"];
@@ -150,7 +164,7 @@ static bool fetchForecast() {
   if (!dt.isNull()) {
     if (!dSr.isNull() && dSr.size() > 0) s_sunrise = (time_t)dSr[0].as<long long>();
     if (!dSs.isNull() && dSs.size() > 0) s_sunset  = (time_t)dSs[0].as<long long>();
-    for (size_t i = 1; i < dt.size() && s_dayN < FORECAST_DAYS; i++) {
+    for (size_t i = 0; i < dt.size() && s_dayN < FORECAST_DAYS; i++) {
       s_days[s_dayN].t      = (time_t)dt[i].as<long long>();
       s_days[s_dayN].code   = dC.isNull()  ? 0 : dC[i].as<int>();
       s_days[s_dayN].tmax   = dMx.isNull() ? 0 : dMx[i].as<float>();
@@ -164,6 +178,23 @@ static bool fetchForecast() {
   }
 
   s_valid = (s_hourN > 0 || s_dayN > 0);
+
+  // Kontrola, ze prvni den je opravdu dnesek. Kdyby se posun nebo hodiny
+  // rozesly s tim, co API povazuje za dnesni den, radek "dnes" by ukazoval
+  // vcerejsek nebo zitrek - a nic jineho by to neprozradilo.
+  if (s_dayN > 0 && Outside_TimeValid()) {
+    const time_t now = time(nullptr);
+    struct tm nowLt, dayLt;
+    localtime_r(&now, &nowLt);
+    localtime_r(&s_days[0].t, &dayLt);
+    if (nowLt.tm_yday != dayLt.tm_yday) {
+      Serial.printf("PREDPOVED: VAROVANI, prvni den vychazi na %d.%d., dnes je %d.%d.\n",
+                    dayLt.tm_mday, dayLt.tm_mon + 1, nowLt.tm_mday, nowLt.tm_mon + 1);
+      Status_Set(ST_FORECAST, "OK, %d h / %d d - dny nesedi", s_hourN, s_dayN);
+      return s_valid;
+    }
+  }
+
   Serial.printf("Predpoved: %d hodin, %d dnu, vychod/zapad %s\n",
                 s_hourN, s_dayN, (s_sunrise && s_sunset) ? "ok" : "chybi");
   Status_Set(ST_FORECAST, "OK, %d h / %d d", s_hourN, s_dayN);
@@ -206,20 +237,15 @@ static bool fetchAirQuality() {
   // data" and "no pollen" have to stay distinguishable: a missing key means we
   // show nothing at all rather than a confident zero.
   s_pollen = -1;
-  s_pollenWorst = "";
-  // Nazev se kresli na displej, takze bez diakritiky (font je 7bitove ASCII).
-  struct { const char* key; const char* name; } P[] = {
-    { "alder_pollen", "olse"  },
-    { "birch_pollen", "briza" },
-    { "grass_pollen", "travy" },
-  };
-  for (auto& p : P) {
-    JsonVariantConst v = cur[p.key];
+  s_pollenWorst = -1;
+  static const char* const KEY[3] = { "alder_pollen", "birch_pollen", "grass_pollen" };
+  for (int i = 0; i < 3; i++) {
+    JsonVariantConst v = cur[KEY[i]];
     if (v.isNull()) continue;
     float f = v.as<float>();
     if (f > s_pollen) {
       s_pollen = f;
-      s_pollenWorst = p.name;
+      s_pollenWorst = i;
     }
   }
 
@@ -233,7 +259,15 @@ int   AirQuality_Aqi()    { return s_aqi; }
 float AirQuality_Pm25()   { return s_pm25; }
 float AirQuality_Pm10()   { return s_pm10; }
 float AirQuality_PollenMax() { return s_pollen; }
-const char* AirQuality_PollenWorst() { return s_pollenWorst; }
+// Nazev se kresli na displej - jazyk a diakritika podle nastaveni.
+const char* AirQuality_PollenWorst() {
+  switch (s_pollenWorst) {
+    case 0:  return LT("olse",  "olše",  "jelsa", "jelša");
+    case 1:  return LT("briza", "bříza", "breza", "breza");
+    case 2:  return LT("travy", "trávy", "travy", "trávy");
+    default: return "";
+  }
+}
 
 // -----------------------------------------------------------------------------
 void Forecast_Tick() {

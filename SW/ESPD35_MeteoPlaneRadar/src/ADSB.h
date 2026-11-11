@@ -36,6 +36,8 @@ struct Aircraft {
   // Kod odpovidace jako ctyri osmickove cislice. Drzi se jako TEXT, ne cislo:
   // 7700 je osmickovy kod a "0021" nesmi zdegenerovat na 21.
   char  squawk[6] = "";
+  char  cat[3] = "";          // kategorie vysilace ADS-B (A1..A7, B1..), 0.8.0
+  uint8_t icon = 0;           // PlaneIcon_Kind podle typu / kategorie, 0.8.0
   bool  onGround = false;     // vzdy false - pozemni letadla se uz nezarazuji
   bool  hasTrack = false;     // false = smer neznamy (kresli se jinak)
 };
@@ -45,6 +47,14 @@ void   ADSB_SetPollFn(void (*fn)());
 // Stahne letadla v okruhu radiusKm kolem polohy. Vraci true pri uspechu.
 // Pri neuspechu zustane posledni PLATNY snimek - radar se nikdy nevymaze.
 bool   ADSB_Fetch(double lat, double lon, float radiusKm);
+
+// Stari dat a pauza po chybach (0.8.4). Vsechno, co se adsb.fi pta, chodi pres
+// ADSB_Fetch(), takze pauza po chybe plati pro vsechny volajici najednou.
+unsigned long ADSB_DataAgeMs();      // od posledniho uspechu; 0xFFFFFFFF = nikdy
+bool   ADSB_DataStale();             // starsi nez ADSB_STALE_MS - kreslit sede
+bool   ADSB_DataHidden();            // starsi nez ADSB_HIDE_MS - nekreslit
+unsigned long ADSB_PauseLeftMs();    // kolik jeste zbyva z pauzy po chybe
+int    ADSB_LastHttpCode();
 
 int    ADSB_Count();
 const Aircraft* ADSB_List();

@@ -10,7 +10,8 @@
 static char          s_txt[ST_COUNT][STATUS_TEXT_MAX];
 static unsigned long s_at[ST_COUNT] = {0};
 
-static const char* SLOT_NAME[ST_COUNT] = { "Letadla", "Meteoradar", "Predpoved" };
+static const char* SLOT_NAME[ST_COUNT] = { "Letadla", "Meteoradar", "Predpoved",
+                                           "Cena", "Vyroba", "Bourka", "Letadla poblic" };
 
 void Status_Set(StatusSlot slot, const char* fmt, ...) {
   if (slot >= ST_COUNT) return;

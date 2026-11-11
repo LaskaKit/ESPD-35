@@ -91,7 +91,14 @@
 #include "ScreenClock.h"
 #include "ScreenForecast.h"
 #include "ScreenSettings.h"
+#include "ScreenPrice.h"
+#include "ScreenMix.h"
 #include "Forecast.h"
+#include "Energy.h"
+#include "TimeZone.h"
+#include "AACanvas.h"
+#include "StormWatch.h"
+#include "PlaneWatch.h"
 #include "Outside.h"
 #include "NightMode.h"
 #include "Watchdog.h"
@@ -104,7 +111,9 @@ Arduino_DataBus* bus = new Arduino_ESP32SPI(TFT_DC, TFT_CS, TFT_SCK, TFT_MOSI, T
 Arduino_GFX*     panel = new Arduino_ILI9488_18bit(bus, TFT_RST, LCD_ROTATION, false /*IPS*/);
 
 // gfx = canvas. Vsechno kresleni jde sem, flush() posle cely snimek najednou.
-Arduino_GFX* gfx = new Arduino_Canvas(LCD_WIDTH, LCD_HEIGHT, panel);
+// AACanvas = Arduino_Canvas, ktery posila text do vyhlazeneho pisma (0.8.5,
+// viz AACanvas.h). Se zvolenym pixelovym pismem se chova presne jako puvodni.
+Arduino_GFX* gfx = new AACanvas(LCD_WIDTH, LCD_HEIGHT, panel);
 
 #if TOUCH_ENABLE
 static void touchPump();      // definice nize; netPoll ji vola driv
@@ -149,7 +158,7 @@ void Backlight_Set(uint8_t pct) {
 // ===========================================================================
 //  Sprava obrazovek
 //
-//  Pet obrazovek, ctyri z nich vypinatelne. "Vypnuta" znamena OPRAVDU
+//  Sedm obrazovek, sest z nich vypinatelnych. "Vypnuta" znamena OPRAVDU
 //  neviditelna: dlouhy stisk ji preskoci, automaticke stridani ji preskoci
 //  a nema dole tecku - takze tecky vzdy odpovidaji tomu, co dlouhy stisk
 //  skutecne udela. Nastaveni vypnout nejde, jinak by deska s vypnutym zbytkem
@@ -158,7 +167,38 @@ void Backlight_Set(uint8_t pct) {
 static int  s_screen = SCREEN_PLANES_I;
 static bool s_forceDraw = false;
 
-static bool screenVisible(int i) { return Settings_ScreenEnabled((uint8_t)i); }
+// Upozorneni na letadlo poblic (0.8.0).
+static bool          s_alertOn = false;
+static unsigned long s_alertUntil = 0;
+static int           s_alertReturn = -1;
+
+// Co je opravdu na displeji - pro stavovou stranku a Home Assistant.
+// Settings_Screen() sleduje jen volby uzivatele, ne stridani ani upozorneni.
+int  MPR_CurrentScreen() { return s_screen; }
+bool MPR_AlertActive()   { return s_alertOn; }
+// Prekreslit aktualni obrazovku (web zmenil jazyk nebo pismo).
+void MPR_RequestRedraw() { s_forceDraw = true; }
+
+// Dosazitelna vubec: ma tecku, dlouhy stisk na ni zastavi. Od 0.8.0 se muze
+// objevit i vypnuta obrazovka - meteoradar, kdyz se blizi bourka (a uzivatel
+// o to stal), a Letadla po dobu upozorneni.
+static bool screenVisible(int i) {
+  if (Settings_ScreenEnabled((uint8_t)i)) return true;
+  if (i == SCREEN_METEO_I && Settings_StormOnly() && StormWatch_Active()) return true;
+  if (i == SCREEN_PLANES_I && s_alertOn) return true;
+  return false;
+}
+
+// Soucast AUTOMATICKEHO stridani. Uzsi nez "viditelna": s "meteoradar jen pri
+// bource" se meteoradar za klidu preskakuje, i kdyz ho dlouhy stisk porad
+// najde, a se zapnutym upozornenim na letadla se Letadla objevuji jen pres
+// upozorneni.
+static bool inRotation(int i) {
+  if (i == SCREEN_SETTINGS_I) return false;
+  if (i == SCREEN_METEO_I && Settings_StormOnly()) return StormWatch_Active();
+  if (i == SCREEN_PLANES_I && Settings_PlaneAlert()) return false;
+  return Settings_ScreenEnabled((uint8_t)i);
+}
 
 // Viditelne obrazovky v poradi - pro tecky i pro krokovani.
 static int visibleList(int* out) {
@@ -219,6 +259,8 @@ static void drawActive() {
     case SCREEN_PLANES_I:   ScreenPlanes_Draw();   break;
     case SCREEN_METEO_I:    ScreenWeather_Draw();  break;
     case SCREEN_FORECAST_I: ScreenForecast_Draw(); break;
+    case SCREEN_PRICE_I:    ScreenPrice_Draw();    break;
+    case SCREEN_MIX_I:      ScreenMix_Draw();      break;
     case SCREEN_SETTINGS_I: ScreenSettings_Draw(); break;
   }
   drawScreenDots();
@@ -231,6 +273,8 @@ static void activeEnter() {
     case SCREEN_PLANES_I:   ScreenPlanes_Enter();   break;
     case SCREEN_METEO_I:    ScreenWeather_Enter();  break;
     case SCREEN_FORECAST_I: ScreenForecast_Enter(); break;
+    case SCREEN_PRICE_I:    ScreenPrice_Enter();    break;
+    case SCREEN_MIX_I:      ScreenMix_Enter();      break;
     case SCREEN_SETTINGS_I: ScreenSettings_Enter(); break;
   }
 }
@@ -241,6 +285,8 @@ static bool activeTick() {
     case SCREEN_PLANES_I:   return ScreenPlanes_Tick();
     case SCREEN_METEO_I:    return ScreenWeather_Tick();
     case SCREEN_FORECAST_I: return ScreenForecast_Tick();
+    case SCREEN_PRICE_I:    return ScreenPrice_Tick();
+    case SCREEN_MIX_I:      return ScreenMix_Tick();
     case SCREEN_SETTINGS_I: return ScreenSettings_Tick();
   }
   return false;
@@ -250,6 +296,7 @@ static void activeChangeRange(int dir) {
   switch (s_screen) {
     case SCREEN_PLANES_I: ScreenPlanes_ChangeRange(dir);  break;
     case SCREEN_METEO_I:  ScreenWeather_ChangeRange(dir); break;
+    case SCREEN_PRICE_I:  ScreenPrice_ChangeRange(dir);   break;   // dnes / zitra
     default: break;   // ostatni obrazovky zadny rozsah nemaji
   }
 }
@@ -259,7 +306,8 @@ static bool activeTap(int x, int y) {
     case SCREEN_CLOCK_I:    return ScreenClock_HandleTap(x, y);
     case SCREEN_PLANES_I:   return ScreenPlanes_HandleTap(x, y);
     case SCREEN_SETTINGS_I: return ScreenSettings_HandleTap(x, y);
-    default: return false;   // meteoradar ani predpoved nemaji dotykove cile
+    case SCREEN_PRICE_I:    return ScreenPrice_HandleTap(x, y);
+    default: return false;   // meteoradar, predpoved ani vyroba nemaji dotykove cile
   }
 }
 
@@ -290,8 +338,8 @@ static void switchScreen(int dir) {
 // nebo z webove stranky.
 static void doFactoryReset() {
   gfx->fillScreen(C_BLACK);
-  UI_TextCentered("Mazu nastaveni", LCD_HEIGHT / 2 - 10, C_RED, 2);
-  UI_TextCentered("Deska se restartuje...", LCD_HEIGHT / 2 + 20, C_GRAY, 1);
+  UI_TextCentered(LT("Mazu nastaveni", "Mažu nastavení", "Mazem nastavenia", "Mažem nastavenia"), LCD_HEIGHT / 2 - 10, C_RED, 2);
+  UI_TextCentered(LT("Deska se restartuje...", "Deska se restartuje...", "Doska sa restartuje...", "Doska sa reštartuje..."), LCD_HEIGHT / 2 + 20, C_GRAY, 1);
   gfx->flush();
   Settings_ClearAll();
   delay(1200);
@@ -438,15 +486,76 @@ static void autoRotateTick() {
   // s Nastavenim prave pracuje, chrani pauza po doteku; ta je na to jediny
   // spravny nastroj.
   //
-  // Krok na dalsi viditelnou DATOVOU obrazovku, Nastaveni se preskakuje.
+  // Krok na dalsi obrazovku, ktera je ve STRIDANI (Nastaveni nikdy).
+  // Upozorneni na letadlo si obrazovku drzi samo.
+  if (s_alertOn) return;
   int next = s_screen;
+  bool found = false;
   for (int guard = 0; guard < SCREEN_N; guard++) {
     next = (next + 1) % SCREEN_N;
-    if (next != SCREEN_SETTINGS_I && screenVisible(next)) break;
+    if (inRotation(next)) { found = true; break; }
   }
-  if (next == s_screen || next == SCREEN_SETTINGS_I) return;
+  if (!found || next == s_screen) return;
   Serial.printf("Stridani -> obrazovka %d\n", next);
   gotoScreen(next);
+}
+
+// --- Letadlo poblic (0.8.0) ---------------------------------------------------
+static void endAlert() {
+  ScreenPlanes_AlertEnd();
+  s_alertOn = false;
+  if (s_screen == SCREEN_PLANES_I) {
+    int r = s_alertReturn;
+    if (r < 0 || r >= SCREEN_N || !screenVisible(r) || r == SCREEN_PLANES_I) {
+      // Obrazovka, odkud jsme prisli, mezitim zmizela - vzit prvni zbyvajici.
+      r = SCREEN_SETTINGS_I;
+      for (int i = 0; i < SCREEN_N; i++) if (screenVisible(i)) { r = i; break; }
+    }
+    s_screen = r;
+    activeEnter();
+    s_forceDraw = true;
+  }
+  // Cely interval na obrazovce, kam jsme se vratili, ne zbytek toho stareho.
+  s_lastRotate = millis();
+}
+
+// Uzivatel behem upozorneni sahl na sklo (nebo na web): ted ridi on.
+// Upozorneni prestane odpocitavat a nic se mu za zady neprepne zpatky.
+static void alertTakenOver() {
+  if (!s_alertOn) return;
+  s_alertOn = false;
+  ScreenPlanes_AlertEnd();
+}
+
+static void planeAlertTick() {
+  if (!Settings_PlaneAlert()) {
+    if (s_alertOn) endAlert();
+    return;
+  }
+  const unsigned long now = millis();
+  if (s_alertOn) {
+    if ((long)(now - s_alertUntil) >= 0) endAlert();
+    return;
+  }
+  // Nikdy neprerusit Nastaveni, samotna Letadla, otevreny detail ani nekoho,
+  // kdo zrovna swipuje.
+  if (s_screen == SCREEN_PLANES_I || s_screen == SCREEN_SETTINGS_I) return;
+  if (activeModalOpen()) return;
+  if (now < s_touchPauseUntil) return;
+
+  char hex[8];
+  float km = 0;
+  bool win = false;
+  if (!PlaneWatch_Take(hex, sizeof(hex), &km, &win)) return;
+
+  Serial.printf("Letadlo %s: %s, %.1f km\n", hex, win ? "v okne" : "nablizku", km);
+  s_alertReturn = s_screen;
+  s_alertOn = true;
+  s_alertUntil = now + (unsigned long)Settings_PlaneAlertSec() * 1000UL;
+  s_screen = SCREEN_PLANES_I;
+  ScreenPlanes_Enter();
+  ScreenPlanes_AlertBegin(hex, km, win);
+  s_forceDraw = true;
 }
 
 #if TOUCH_ENABLE
@@ -456,6 +565,13 @@ static void dispatchTouch() {
   const PendKind kind = s_pendKind;
   const int a = s_pendA, b = s_pendB;
   s_pendKind = PEND_NONE;
+
+  if (s_alertOn) {
+    alertTakenOver();
+    // Klepnuti behem upozorneni jen zavre panel, ktery upozorneni otevrelo -
+    // nesmi pak vybrat letadlo, ktere bylo zrovna pod prstem.
+    if (kind == PEND_TAP) { s_forceDraw = true; return; }
+  }
 
   if (kind == PEND_SWIPE) {
     // S otevrenym detailem swipe jen zavre panel, aby se omylem nezmenilo
@@ -517,6 +633,8 @@ void setup() {
   Serial.printf("Duvod restartu: %s\n", resetReasonText());
 
   Settings_Begin();
+  CHMU_SetMasked(Settings_RadarSource() == RADAR_SRC_CHMU_MASKED);
+  TimeZone_Begin();          // TZ_INFO z Config.h; predpoved ho muze opravit podle polohy
   Layout_SelfTest();         // nic nedela, dokud neni LAYOUT_DEBUG
 
   // Displej + canvas.
@@ -546,7 +664,10 @@ void setup() {
     // NTP zustava hlavnim zdrojem casu. Kdyby neprosel (nekteri poskytovatele
     // blokuji UDP port 123), nastavi se hodiny z hlavicky Date prvni odpovedi,
     // kterou stejne stahujeme - viz Clock.h.
-    configTzTime(TZ_INFO, NTP_SERVER);
+    // Casove pasmo uz nastavil TimeZone_Begin(); configTzTime() ho zapise
+    // znovu stejne. Kdyz pozdeji predpoved zjisti, ze deska je jinde, posun
+    // prepise TimeZone_SetOffset() - viz TimeZone.h.
+    configTzTime(TimeZone_Text(), NTP_SERVER);
     GeoIP_DetectIfNeeded();   // doplni polohu dle IP, kdyz ji uzivatel nezadal
   }
 
@@ -634,12 +755,14 @@ void loop() {
   // odnikud jinud.
   {
     const int scr = WebConfig_TakeScreen();
+    if (scr >= 0) alertTakenOver();
     if (scr >= 0) {
       if (activeModalOpen()) ScreenPlanes_CloseDetail();
       gotoScreen(scr);
       s_touchPauseUntil = millis() + rotatePauseMs();
     }
     const int step = WebConfig_TakeScreenStep();
+    if (step) alertTakenOver();
     if (step) {
       if (activeModalOpen()) ScreenPlanes_CloseDetail();
       switchScreen(step);
@@ -716,6 +839,7 @@ void loop() {
   }
 
   autoRotateTick();
+  planeAlertTick();
 
   // Stav stridani na webovou stranku, aby slo poznat, PROC se zrovna nestrida
   // (vypnuto vs. pozastaveno po doteku).
@@ -727,6 +851,9 @@ void loop() {
   }
 
   Forecast_Tick();   // predpoved, casy slunce a ovzdusi
+  Energy_Tick();     // cena a vyroba elektriny (jen kdyz jsou ty obrazovky zapnute)
+  StormWatch_Tick(); // nejnovejsi snimek radaru kolem nas (jen kdyz to neco chce)
+  PlaneWatch_Tick(s_screen == SCREEN_PLANES_I);   // maly dotaz pro upozorneni / HA
   NightMode_Tick();  // denni / nocni jas
   Route_Tick();      // cekajici dotaz "odkud a kam leti"
   Settings_Tick();   // odlozeny zapis stavu UI do NVS

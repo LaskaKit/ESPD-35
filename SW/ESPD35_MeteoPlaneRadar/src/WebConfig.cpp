@@ -15,6 +15,21 @@
 #include "Watchdog.h"
 #include "ADSB.h"
 #include "Forecast.h"
+#include "Energy.h"
+#include "TimeZone.h"
+#include "CHMU.h"
+#include "StormWatch.h"
+#include "PlaneWatch.h"
+#include "PlaneIcon.h"
+#include "ScreenWeather.h"
+#include <string.h>
+#include <math.h>
+
+// Co je opravdu na displeji a jestli bezi upozorneni na letadlo (definovane
+// ve spravci obrazovek v .ino).
+int  MPR_CurrentScreen();
+bool MPR_AlertActive();
+void MPR_RequestRedraw();
 
 #include <WiFi.h>
 #include <WebServer.h>
@@ -98,6 +113,32 @@ static void handleRoot() {
 // -----------------------------------------------------------------------------
 //  Konfigurace
 // -----------------------------------------------------------------------------
+// Poloha se zmenila (z webu nebo ze zalohy). Krome predpovedi musi zahodit
+// sva data i energie - a kdyz se deska presunula mimo oblast, kterou zdroj
+// pokryva, prislusnou obrazovku JEDNOU vypnout. Neni to trvaly zamek:
+// zaskrtavatko zustava a znovu zapnuta obrazovka zustane zapnuta, protoze
+// oblasti v Config.h jsou obdelniky a nekdo u hranic muze ceske ceny chtit.
+static void onLocationChanged() {
+  Forecast_Invalidate();       // stara predpoved patri jine obci
+  Energy_Invalidate();
+  if (!Energy_PriceInArea() && Settings_ScreenEnabled(SCREEN_PRICE_I)) {
+    Settings_SetScreenEnabled(SCREEN_PRICE_I, false);
+    Serial.println("Poloha mimo CR: vypinam obrazovku s cenou elektriny");
+  }
+  if (!Energy_MixInArea() && Settings_ScreenEnabled(SCREEN_MIX_I)) {
+    Settings_SetScreenEnabled(SCREEN_MIX_I, false);
+    Serial.println("Poloha mimo Evropu: vypinam obrazovku s vyrobou");
+  }
+  // Porad cesky vychozi stav po presunu do zahranici? Cela Evropa je lepsi
+  // odhad nez zeme, kde uzivatel nebydli. Vedomou volbu nechat byt.
+  if (!Energy_PriceInArea() && Energy_MixInArea() &&
+      !strcmp(Settings_MixCountry(), MIX_COUNTRY_DEFAULT)) {
+    Settings_SetMixCountry("eu");
+    Serial.println("Poloha mimo CR: vyroba prepnuta na celou Evropu");
+  }
+  s_locChanged = true;         // loop() da vedet obrazovkam
+}
+
 static void handleGetConfig() {
   JsonDocument doc;
   JsonObject o = doc.to<JsonObject>();
@@ -146,13 +187,28 @@ static void handlePostConfig() {
   // kterému se deska restartuje po kazdem ulozeni jasu, prestane nastaveni
   // pouzivat.
   const double lat0 = Settings_Lat(), lon0 = Settings_Lon();
+  char cc0[4];
+  strncpy(cc0, Settings_MixCountry(), sizeof(cc0) - 1); cc0[sizeof(cc0) - 1] = '\0';
+
+  const uint8_t src0 = Settings_RadarSource();
+  const uint8_t lang0 = Settings_Lang(), font0 = Settings_ClockFont();
+  const bool    metric0 = Settings_MetricUnits();
 
   Settings_FromJson(body.as<JsonObjectConst>());
 
-  if (Settings_Lat() != lat0 || Settings_Lon() != lon0) {
-    Forecast_Invalidate();       // stara predpoved patri jine obci
-    s_locChanged = true;         // loop() da vedet obrazovkam
+  if (Settings_Lat() != lat0 || Settings_Lon() != lon0) onLocationChanged();
+  // Jiny zdroj meteoradaru (CHMU / CHMU masked): animace se stahne znovu,
+  // az bude meteoradar na displeji. Bez restartu.
+  if (Settings_RadarSource() != src0) {
+    CHMU_SetMasked(Settings_RadarSource() == RADAR_SRC_CHMU_MASKED);
+    ScreenWeather_SourceChanged();
   }
+  // Jina zeme vyroby = jina data; stara se nesmi ukazovat pod novym nazvem.
+  if (strcmp(cc0, Settings_MixCountry()) != 0) Energy_Invalidate();
+
+  // Jiny jazyk, pismo nebo jednotky: prekreslit, co je prave na displeji.
+  if (Settings_Lang() != lang0 || Settings_ClockFont() != font0 ||
+      Settings_MetricUnits() != metric0) MPR_RequestRedraw();
 
   // Jas se ma projevit okamzite, at je videt, co posuvnik dela.
   Backlight_Set(Settings_Backlight());
@@ -195,7 +251,8 @@ static void handleStatus() {
     o["time"] = Clock_Valid() ? buf : "--:--:--";
   }
 
-  o["screen"]        = Settings_Screen();
+  o["screen"]        = MPR_CurrentScreen();   // skutecne na displeji (0.8.0)
+  o["alert"]         = MPR_AlertActive();
   o["rotateSec"]     = s_rotSecs;
   o["rotatePauseLeft"] = s_rotPauseLeft;
   o["isNight"] = Settings_IsNight();
@@ -206,6 +263,31 @@ static void handleStatus() {
   Status_Text(ST_ADSB, buf, sizeof(buf));  st["adsb"]  = buf;
   Status_Text(ST_RADAR, buf, sizeof(buf)); st["radar"] = buf;
   Status_Text(ST_FORECAST, buf, sizeof(buf)); st["forecast"] = buf;
+  Status_Text(ST_PRICE, buf, sizeof(buf));    st["price"] = buf;
+  Status_Text(ST_MIX, buf, sizeof(buf));      st["mix"] = buf;
+  Status_Text(ST_STORM, buf, sizeof(buf));    st["storm"] = buf;
+  Status_Text(ST_PLANEWATCH, buf, sizeof(buf)); st["planeWatch"] = buf;
+  // Ulozene site (0.8.0) - jen nazvy a jestli je heslo, hesla NIKDY.
+  {
+    JsonArray nets = o["wifiNets"].to<JsonArray>();
+    for (uint8_t i = 0; i < WIFI_SLOTS; i++) {
+      JsonObject n = nets.add<JsonObject>();
+      n["ssid"] = Settings_WifiSsid(i);
+      n["hasPass"] = Settings_WifiPass(i)[0] != '\0';
+    }
+  }
+
+  // Casove pasmo a odkud je. Prvni vec, na kterou se ptat, kdyz deska v
+  // zahranici ukazuje spatnou hodinu.
+  {
+    char tzb[64];
+    const int off = TimeZone_Offset();
+    const int aoff = off < 0 ? -off : off;
+    snprintf(tzb, sizeof(tzb), "UTC%c%d:%02d (%s)", off < 0 ? '-' : '+',
+             aoff / 3600, (aoff % 3600) / 60,
+             TimeZone_FromNetwork() ? "podle polohy" : "z Config.h");
+    o["timeZone"] = tzb;
+  }
 
   sendJson(200, doc);
 }
@@ -257,6 +339,132 @@ static void handleScan() {
   sendJson(200, doc);
 }
 
+// --- Ulozene WiFi site (0.8.0) ------------------------------------------------
+// Ulozi tri sloty BEZ pripojovani - jde o to zadat sit z kancelare jeste doma.
+// Zkousi se, kdyz soucasna sit zmizi. Chybejici nebo prazdne "pass" ponecha
+// ulozene heslo, protoze stranka ulozena hesla nikdy nezna.
+static void handleWifiList() {
+  JsonDocument doc;
+  if (!readBody(doc)) { s_srv.send(400, "application/json", "{\"error\":\"json\"}"); return; }
+  JsonArrayConst nets = doc["nets"];
+  if (nets.isNull()) { s_srv.send(400, "application/json", "{\"error\":\"nets\"}"); return; }
+  for (uint8_t i = 0; i < WIFI_SLOTS && i < nets.size(); i++) {
+    const char* ssid = nets[i]["ssid"] | "";
+    const char* pass = nets[i]["pass"] | "";
+    Settings_SetWifiSlot(i, ssid, (pass && *pass) ? pass : nullptr);
+  }
+  sendOk();
+}
+
+// --- Home Assistant (0.8.0) ---------------------------------------------------
+// Jeden plochy JSON pro integraci RESTful v Home Assistantu. Jen ke cteni a bez
+// hesla - nerika nic, co neni videt na displeji. Ve vychozim stavu vypnuto.
+// NEOVERENO se skutecnym Home Assistantem.
+static const char* const SCREEN_KEYS[SCREEN_N] = {
+  "clock", "planes", "meteo", "forecast", "price", "mix", "settings" };
+
+static void handleHa() {
+  if (!Settings_HaEnabled()) {
+    s_srv.send(404, "application/json", "{\"error\":\"disabled\"}");
+    return;
+  }
+  JsonDocument doc;
+  doc["version"]  = FW_VERSION;
+  doc["uptime_s"] = (uint32_t)(millis() / 1000UL);
+  doc["ip"]   = WiFi.localIP().toString();
+  doc["ssid"] = WiFi.SSID();
+  doc["rssi"] = WiFi.RSSI();
+  doc["lat"]  = Settings_Lat();
+  doc["lon"]  = Settings_Lon();
+
+  const int scr = MPR_CurrentScreen();
+  doc["screen"] = (scr >= 0 && scr < SCREEN_N) ? SCREEN_KEYS[scr] : "?";
+  doc["night"]  = Settings_IsNight();
+  doc["brightness"] = Settings_Backlight();
+
+  // Pocasi. null misto 0, dokud neni znamo: 0 degC a "bez dat" nesmi v grafu
+  // vypadat stejne.
+  if (Forecast_CurrentValid()) {
+    doc["temperature"]  = roundf(Forecast_CurrentTemp() * 10) / 10;
+    doc["wind_kmh"]     = roundf(Forecast_CurrentWind() * 10) / 10;
+    doc["precip_mm"]    = roundf(Forecast_CurrentPrecip() * 10) / 10;
+    doc["weather_code"] = Forecast_CurrentCode();
+  } else {
+    doc["temperature"] = nullptr; doc["wind_kmh"] = nullptr;
+    doc["precip_mm"] = nullptr;   doc["weather_code"] = nullptr;
+  }
+  if (Forecast_DayCount() > 0) {
+    const FcDay& d = Forecast_Days()[0];
+    doc["today_min"] = roundf(d.tmin * 10) / 10;
+    doc["today_max"] = roundf(d.tmax * 10) / 10;
+  }
+  time_t rise, set;
+  if (Forecast_SunTimes(&rise, &set)) {
+    char t[8]; struct tm lt;
+    localtime_r(&rise, &lt); snprintf(t, sizeof(t), "%02d:%02d", lt.tm_hour, lt.tm_min); doc["sunrise"] = t;
+    localtime_r(&set, &lt);  snprintf(t, sizeof(t), "%02d:%02d", lt.tm_hour, lt.tm_min); doc["sunset"] = t;
+  }
+  if (AirQuality_Valid()) {
+    if (AirQuality_Aqi() >= 0) doc["aqi"] = AirQuality_Aqi();
+    doc["pm25"] = roundf(AirQuality_Pm25() * 10) / 10;
+  }
+
+  // Hlidani bourky. Bezi vzdy, kdyz je tohle zapnute.
+  {
+    JsonObject st = doc["storm"].to<JsonObject>();
+    st["active"]    = StormWatch_Active();
+    st["valid"]     = StormWatch_Valid();
+    st["coverage"]  = StormWatch_InCoverage();
+    st["threshold_dbz"] = Settings_StormDbz();
+    st["radius_km"] = Settings_StormKm();
+    if (StormWatch_Valid()) {
+      st["max_dbz"] = StormWatch_MaxDbz() >= 0 ? (int)StormWatch_MaxDbz() : 0;
+      if (StormWatch_NearestKm() >= 0) st["nearest_km"] = roundf(StormWatch_NearestKm());
+      else                             st["nearest_km"] = nullptr;
+      st["area_km2"] = StormWatch_Pixels();
+      st["frame"]    = StormWatch_FrameTime();
+    }
+  }
+
+  // Letadla - z posledniho stazeni (maly okruh hlidace, nebo rozsah radaru,
+  // kdyz je obrazovka Letadla na displeji).
+  {
+    JsonObject ac = doc["aircraft"].to<JsonObject>();
+    ac["count"] = ADSB_DataStale() ? 0 : ADSB_Count();
+    if (ADSB_DataAgeMs() != 0xFFFFFFFFUL) ac["data_age_s"] = ADSB_DataAgeMs() / 1000UL;
+    ac["stale"] = ADSB_DataStale();
+    ac["alert"] = MPR_AlertActive();
+    float km = 0, brg = 0; bool win = false;
+    const int i = PlaneWatch_Best(&km, &brg, &win);
+    if (i >= 0) {
+      const Aircraft& a = ADSB_List()[i];
+      ac["callsign"]    = a.callsign[0] ? a.callsign : a.hex;
+      ac["hex"]         = a.hex;
+      ac["type"]        = a.type;
+      ac["registration"]= a.reg;
+      ac["kind"]        = PlaneIcon_Name(a.icon);
+      ac["distance_km"] = roundf(km * 10) / 10;
+      ac["bearing"]     = (int)lroundf(brg) % 360;
+      ac["altitude_m"]  = (int)lroundf(a.altFt * 0.3048f);
+      ac["speed_kmh"]   = (int)lroundf(a.gsKt * 1.852f);
+      ac["in_window"]   = win;
+      ac["squawk"]      = a.squawk;
+    } else {
+      ac["callsign"] = nullptr;
+      ac["distance_km"] = nullptr;
+    }
+  }
+
+  // Elektrina - jen kdyz jsou ty obrazovky zapnute (jinak se nic nestahuje).
+  if (Energy_PriceValid()) {
+    doc["price_spot_czk_mwh"] = roundf(Energy_PriceNow());
+    doc["price_czk_kwh"] = roundf(Energy_FinalCzkKwh(Energy_PriceNow()) * 1000) / 1000;
+  }
+  if (Energy_MixValid()) doc["renewable_pct"] = roundf(Energy_RenewableShare() * 10) / 10;
+
+  sendJson(200, doc);
+}
+
 static void handleWifi() {
   JsonDocument body;
   if (!readBody(body)) { s_srv.send(400, "application/json", "{\"error\":\"json\"}"); return; }
@@ -288,7 +496,7 @@ static void handleGeocode() {
     return;
   }
 
-  String url = String(GEOCODE_URL) + "?name=" + q + "&count=8&language=cs&format=json";
+  String url = String(GEOCODE_URL) + "?name=" + q + "&count=8&language=" + Lang_Code() + "&format=json";
   String resp;
   if (!Net_GetString(url.c_str(), resp, "GEOKOD")) {
     s_srv.send(502, "application/json", "{\"error\":\"nedostupne\"}");
@@ -317,14 +525,24 @@ static void handleExport() {
   s_srv.send(200, "application/json", out);
 }
 
+// Zmena hesla spravce. Kdyz heslo nastavene je, musi prijit i to soucasne -
+// jinak by ochranu mohl vypnout kdokoli, kdo otevre stranku.
+static void handlePassword() {
+  JsonDocument body;
+  if (!readBody(body)) { s_srv.send(400, "application/json", "{\"error\":\"json\"}"); return; }
+  if (!authed(body)) return;
+  const char* np = body["newPassword"] | "";
+  Settings_SetAdminPassword(np);
+  sendOk();
+}
+
 static void handleImport() {
   JsonDocument body;
   if (!readBody(body)) { s_srv.send(400, "application/json", "{\"error\":\"json\"}"); return; }
   if (!authed(body)) return;
   Settings_FromJson(body.as<JsonObjectConst>());
   Backlight_Set(Settings_Backlight());
-  Forecast_Invalidate();
-  s_locChanged = true;
+  onLocationChanged();
   sendOk();
   // Obnova ze zalohy meni vsechno najednou vcetne polohy, takze tady restart
   // smysl ma - je to jednorazova akce a uzivatel ji cekal.
@@ -374,8 +592,8 @@ static int    s_otaLastPct = -1;
 
 void WebConfig_DrawOtaProgress(int pct) {
   gfx->fillScreen(C_BLACK);
-  UI_TextCentered("Probiha aktualizace", 90, C_WHITE, 2);
-  UI_TextCentered("Neodpojujte napajeni", 118, C_YELLOW, 1);
+  UI_TextCentered(LT("Probiha aktualizace", "Probíhá aktualizace", "Prebieha aktualizacia", "Prebieha aktualizácia"), 90, C_WHITE, 2);
+  UI_TextCentered(LT("Neodpojujte napajeni", "Neodpojujte napájení", "Neodpajajte napajanie", "Neodpájajte napájanie"), 118, C_YELLOW, 1);
 
   const int bx = 60, by = 150, bw = LCD_WIDTH - 120, bh = 34;
   gfx->drawRoundRect(bx, by, bw, bh, 6, C_GRAY);
@@ -389,7 +607,7 @@ void WebConfig_DrawOtaProgress(int pct) {
     // Velikost neznama (prohlizec ji neposlal) - procenta by lhala.
     UI_TextCentered("...", by + bh + 16, C_WHITE, 2);
   }
-  UI_TextCentered("Po dokonceni se deska sama restartuje.", 250, C_GRAY, 1);
+  UI_TextCentered(LT("Po dokonceni se deska sama restartuje.", "Po dokončení se deska sama restartuje.", "Po dokonceni sa doska sama restartuje.", "Po dokončení sa doska sama reštartuje."), 250, C_GRAY, 1);
   gfx->flush();
 }
 
@@ -400,9 +618,10 @@ static void otaFinish() {
              ok ? "{\"ok\":true}" : "{\"ok\":false}");
 
   gfx->fillScreen(C_BLACK);
-  UI_TextCentered(ok ? "Hotovo, restartuji..." : "Aktualizace selhala",
+  UI_TextCentered(ok ? LT("Hotovo, restartuji...", "Hotovo, restartuji...", "Hotovo, restartujem...", "Hotovo, reštartujem...")
+                     : LT("Aktualizace selhala", "Aktualizace selhala", "Aktualizacia zlyhala", "Aktualizácia zlyhala"),
                   LCD_HEIGHT / 2 - 10, ok ? C_GREEN : C_RED, 2);
-  if (!ok) UI_TextCentered("Puvodni verze zustava v desce.",
+  if (!ok) UI_TextCentered(LT("Puvodni verze zustava v desce.", "Původní verze zůstává v desce.", "Povodna verzia zostava v doske.", "Pôvodná verzia zostáva v doske."),
                            LCD_HEIGHT / 2 + 20, C_GRAY, 1);
   gfx->flush();
 
@@ -493,9 +712,12 @@ void WebConfig_Begin(bool apMode) {
   s_srv.on("/api/range",  HTTP_POST, handleRange);
   s_srv.on("/api/scan",   HTTP_GET,  handleScan);
   s_srv.on("/api/wifi",   HTTP_POST, handleWifi);
+  s_srv.on("/api/wifilist", HTTP_POST, handleWifiList);   // tri ulozene site (0.8.0)
+  s_srv.on("/api/ha",     HTTP_GET,  handleHa);           // Home Assistant (0.8.0)
   s_srv.on("/api/geocode",HTTP_GET,  handleGeocode);
   s_srv.on("/api/export", HTTP_GET,  handleExport);
   s_srv.on("/api/import", HTTP_POST, handleImport);
+  s_srv.on("/api/password", HTTP_POST, handlePassword);
   s_srv.on("/api/reboot", HTTP_POST, handleReboot);
   s_srv.on("/api/reset",  HTTP_POST, handleReset);
   // Druhy handler bezi po kouscich behem prijmu, prvni az na konci.

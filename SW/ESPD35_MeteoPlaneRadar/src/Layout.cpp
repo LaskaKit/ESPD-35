@@ -2,6 +2,7 @@
 //  ESPD35_MeteoPlaneRadar - rozvrzeni obrazovky. Viz Layout.h.
 // =============================================================================
 #include "Layout.h"
+#include "AAFont.h"
 #include <string.h>
 
 // Kolik obdelniku se drzi najednou. Nejvic jich potrebuje obrazovka letadel:
@@ -23,6 +24,10 @@ int  Layout_Count() { return s_n; }
 
 int Layout_TextW(const char* s, uint8_t size) {
   if (!s) return 0;
+  // Se zvolenym vyhlazenym pismem (0.8.5) skutecna sirka - ta je nanejvys
+  // stejna jako u vestaveneho fontu, takze rezervace dal plati, a centrovany
+  // text zustane vycentrovany.
+  if (AAText_Enabled()) return AAText_Width((const uint8_t*)s, strlen(s), size);
   return (int)strlen(s) * LY_CHAR_W(size);
 }
 
@@ -91,7 +96,7 @@ void Layout_SelfTest() {
     { "LY_LEGEND",     LY_LEGEND_X,     LY_LEGEND,          LY_LEGEND_W,     LY_LEGEND_H  },
     { "LY_RANGE",      LY_RANGE_X,      LY_RANGE,           LY_RANGE_W,      LY_CHAR_H(1) },
     { "LY_RANGE_DOTS", LY_RANGE_DOTS_X, LY_RANGE_DOTS_Y0,   LY_RANGE_DOTS_W, LY_RANGE_DOTS_H },
-    { "LY_DOTS(5)",    LY_DOTS_X,       LY_DOTS_Y0,        LY_DOTS_W,       LY_DOTS_H    },
+    { "LY_DOTS(7)",    LY_DOTS_X,       LY_DOTS_Y0,        LY_DOTS_W,       LY_DOTS_H    },
     { "LY_FOOTER",     LY_FOOTER_X,     LY_FOOTER,         LY_FOOTER_W,     LY_CHAR_H(1) },
   };
   const int n = (int)(sizeof(B) / sizeof(B[0]));

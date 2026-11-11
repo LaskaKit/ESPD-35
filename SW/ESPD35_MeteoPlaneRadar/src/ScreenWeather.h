@@ -11,3 +11,7 @@ bool ScreenWeather_Tick();          // stahovani; true = prekreslit
 void ScreenWeather_Draw();
 
 void ScreenWeather_ChangeRange(int dir);   // swipe / tlacitko: zmena rozsahu
+
+// Zmenil se zdroj (CHMU / CHMU masked, 0.8.0): zahodit animaci, pri pristim
+// zobrazeni se stahne znovu.
+void ScreenWeather_SourceChanged();

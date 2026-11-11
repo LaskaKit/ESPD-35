@@ -20,6 +20,9 @@
 // Vraci false pri chybejicim pripojeni, nedostatku pameti, jinem nez 200
 // nebo prazdnem tele; duvod se jednou vypise, takze volajici muze proste
 // zkusit pozdeji znovu.
+//
+// Zvlada https:// i obycejne http:// (ip-api.com). Telo se cte pres sink
+// (chunked se dekoduje) do bufferu v PSRAM se stropem NET_MAX_TEXT.
 bool Net_GetString(const char* url, String& out, const char* tag);
 
 // Stahne URL do bufferu dodaneho volajicim - pro binarni data (PNG snimky),

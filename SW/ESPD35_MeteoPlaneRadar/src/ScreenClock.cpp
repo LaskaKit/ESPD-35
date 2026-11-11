@@ -2,6 +2,7 @@
 //  ESPD35_MeteoPlaneRadar - obrazovka hodin. Viz ScreenClock.h.
 // =============================================================================
 #include "ScreenClock.h"
+#include "AAFont.h"
 #include "Settings.h"
 #include "Outside.h"
 #include "Forecast.h"
@@ -35,6 +36,14 @@
 #define CLK_TEMP_Y   190
 #define CLK_PRECIP_Y 222
 #define CLK_SUN_Y    258      // velikost 2, svetle seda - musi byt CITELNE
+
+// S vyhlazenym pismem (0.8.0) jsou hodiny skutecne obrysy pisma ve velikosti,
+// ve ktere se zobrazuji: cislice 98 px vysoke, "23:58" ma 359 px. To je o tretinu
+// vic nez vestaveny font zvetseny osmkrat (64 px), takze datum jde vys a vitr
+// niz. Pocasi a vychod / zapad zustavaji, kde byly.
+#define CLK_AA_DATE_Y    18
+#define CLK_AA_TIME_BASE 138   // uctari cislic (horni okraj ~40)
+#define CLK_AA_WIND_Y    148
 
 static int s_lastSec = -1;
 
@@ -151,7 +160,7 @@ void ScreenClock_Draw() {
 
   if (!Outside_TimeValid()) {
     UI_TextCentered(T(S_WIFI_WAIT), LCD_HEIGHT / 2 - 20, C_GRAY, 2);
-    UI_TextCentered("cekam na cas", LCD_HEIGHT / 2 + 10, C_GRAY, 1);
+    UI_TextCentered(LT("cekam na cas", "čekám na čas", "cakam na cas", "čakám na čas"), LCD_HEIGHT / 2 + 10, C_GRAY, 1);
     return;
   }
 
@@ -163,6 +172,8 @@ void ScreenClock_Draw() {
   // nimi a ne skrz. Opacne poradi by znamenalo carou preskrtnute datum.
   drawSeconds(lt.tm_sec);
 
+  const AAFontSet* fs = AAFont_ClockSet(Settings_ClockFont());
+
   // --- Datum ---------------------------------------------------------------
   {
     char d[40];
@@ -171,14 +182,23 @@ void ScreenClock_Draw() {
              Lang_MonthName(lt.tm_mon), lt.tm_year + 1900);
     // S podkladem: u horniho okraje je elipsa nejsirsi a prochazela by presne
     // tudy, kde je datum.
-    UI_TextCenteredBg(d, CLK_DATE_Y, C_LTGRAY, C_BLACK, 2);
+    UI_TextCenteredBg(d, fs ? CLK_AA_DATE_Y : CLK_DATE_Y, C_LTGRAY, C_BLACK, 2);
   }
 
   // --- Cas -----------------------------------------------------------------
   {
     char t[8];
     snprintf(t, sizeof(t), "%02d:%02d", lt.tm_hour, lt.tm_min);
-    UI_TextCentered(t, CLK_TIME_Y, Settings_ClockColor(), CLK_TIME_SZ);
+    if (fs) {
+      // Cislice maji vsechny stejnou sirku, takze cas pri zmene minuty
+      // neposkakuje do stran. Podklad pod nimi kvuli elipse sekund.
+      const int w = AAFont_TextW(fs->big, t);
+      const int top = CLK_AA_TIME_BASE - fs->big->ascent - 2;
+      gfx->fillRect(LCD_WIDTH / 2 - w / 2 - 4, top, w + 8, fs->big->ascent + 6, C_BLACK);
+      AAFont_DrawCentered(fs->big, t, LCD_WIDTH / 2, CLK_AA_TIME_BASE, Settings_ClockColor());
+    } else {
+      UI_TextCentered(t, CLK_TIME_Y, Settings_ClockColor(), CLK_TIME_SZ);
+    }
   }
 
   // --- Vitr ----------------------------------------------------------------
@@ -186,8 +206,8 @@ void ScreenClock_Draw() {
   // velikosti 1, kde ho nebylo poznat.
   if (Forecast_CurrentValid()) {
     char w[24];
-    snprintf(w, sizeof(w), "vitr %.0f km/h", Forecast_CurrentWind());
-    UI_TextCenteredBg(w, CLK_WIND_Y, C_LTGRAY, C_BLACK, 2);
+    snprintf(w, sizeof(w), "%s %.0f km/h", LT("vitr", "vítr", "vietor", "vietor"), Forecast_CurrentWind());
+    UI_TextCenteredBg(w, fs ? CLK_AA_WIND_Y : CLK_WIND_Y, C_LTGRAY, C_BLACK, 2);
   }
 
   // --- Pocasi --------------------------------------------------------------
@@ -237,8 +257,9 @@ void ScreenClock_Draw() {
       localtime_r(&rise, &r);
       localtime_r(&set, &s);
       char line[48];
-      snprintf(line, sizeof(line), "vychod %02d:%02d   zapad %02d:%02d",
-               r.tm_hour, r.tm_min, s.tm_hour, s.tm_min);
+      snprintf(line, sizeof(line), "%s %02d:%02d   %s %02d:%02d",
+               LT("vychod", "východ", "vychod", "východ"), r.tm_hour, r.tm_min,
+               LT("zapad", "západ", "zapad", "západ"), s.tm_hour, s.tm_min);
       // Bylo C_DKGRAY velikosti 1 - na cernem pozadi to proste neslo precist.
       UI_TextCenteredBg(line, CLK_SUN_Y, C_LTGRAY, C_BLACK, 2);
     }

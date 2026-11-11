@@ -12,7 +12,14 @@
 #pragma once
 #include <Arduino.h>
 
-enum StatusSlot : uint8_t { ST_ADSB = 0, ST_RADAR, ST_FORECAST, ST_COUNT };
+enum StatusSlot : uint8_t {
+  ST_ADSB = 0, ST_RADAR, ST_FORECAST,
+  ST_PRICE,        // spotova cena elektriny
+  ST_MIX,          // vyroba podle zdroju
+  ST_STORM,        // hlidani bourky (0.8.0)
+  ST_PLANEWATCH,   // hlidani letadel poblic (0.8.0)
+  ST_COUNT
+};
 
 // Jako printf; text se orizne na delku, kterou stranka zvladne zobrazit.
 void Status_Set(StatusSlot slot, const char* fmt, ...);

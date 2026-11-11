@@ -1,6 +1,10 @@
 // =============================================================================
 //  ESPD35_MeteoPlaneRadar - obrazovka predpovedi. Viz ScreenForecast.h.
+//
+//  Rozvrzeni po radcich prevzate z petus/MeteoPlaneRadar 0.7.0 a nakreslene
+//  pro obdelnik 480x320.
 // =============================================================================
+#include "Lang.h"     // LT(): cesky / slovensky, s diakritikou i bez
 #include "ScreenForecast.h"
 #include "Forecast.h"
 #include "Outside.h"
@@ -16,53 +20,74 @@
 #include <stdio.h>
 
 // --- Rozvrzeni 480x320 -------------------------------------------------------
-// SVISLE ROZESTUPY MUSI POCITAT S REZERVACI MISTA, ne jen s vyskou pisma.
-// Skupina "hodnota + jednotka" narokuje LY_CHAR_H(2) + 4 = 20 px a zacina
-// dva pixely nad textem, takze dva radky pod sebou potrebuji rozestup
-// nejmene 20 px a nasledujici cara nejmene 20 px pod poslednim radkem.
 //
-// Prvni verze mela srazky na 102 (narok 100 az 122) a oddelovac na 118 -
-// cara tedy narok prekryla a SRAZKY SE VUBEC NEKRESLILY. Layout to udelal
-// spravne, chyba byla v rozvrzeni. Rozestupy nize kontroluje test.
-#define FC_HDR_Y       6
+// Od teto verze se predpoved cte PO RADCICH, stejne jako v petus/MeteoPlaneRadar
+// 0.7.0:
+//
+//     nyni / 12-15h / 15-18h   - zbytek odpoledne, popsany hodinami
+//     dnes                     - jediny den, ke kteremu nikdo nepocita
+//     Ct 6.11., Pa 7.11. ...   - dny v tydnu i s datem
+//
+// Drive to bylo sest po sobe jdoucich hodin a tri dny. To odpovidalo jen na
+// "co udela pristich sest hodin" a nic jineho. Okno "12-15h" uz je odpoved,
+// "za tri hodiny" je pocitani.
+//
+// SVISLE ROZESTUPY MUSI POCITAT S REZERVACI MISTA, ne jen s vyskou pisma:
+// hodnota velikosti 2 narokuje LY_CHAR_H(2) + 4 = 20 px a zacina dva pixely
+// nad textem. Radky jsou proto vysoke 26 a 27 px a cary mezi nimi lezi mimo
+// naroky obou sousedu.
 #define FC_SEP1_Y     30
-#define FC_HRS_LABEL  36      // "14h"        velikost 1
-#define FC_HRS_ICON   64      // stred ikony
-#define FC_HRS_TEMP   84      // teplota      velikost 2  (narok  82..102)
-#define FC_HRS_RAIN  104      // srazky       velikost 2  (narok 102..122)
-#define FC_HRS_W     (LCD_WIDTH / FORECAST_HOURS)   // 480 / 6 = 80
-#define FC_SEP2_Y    126
-
-#define FC_DAY_Y0    132
-#define FC_DAY_H      42      // 3 x 42 = 126, konci na 258
-#define FC_SEP3_Y    262
+#define FC_HOUR_Y0    34      // radek "nyni" a dve okna
+#define FC_HOUR_H     26
+#define FC_SEP2_Y    (FC_HOUR_Y0 + 3 * FC_HOUR_H + 4)        // 116
+#define FC_DAY_Y0    (FC_SEP2_Y + 4)                         // 120
+#define FC_DAY_H      27      // 5 x 27 = 135, konci na 255
+#define FC_SEP3_Y    260
 
 // Radek ovzdusi: maly popisek nahore, VELKA hodnota pod nim. Konci na 292,
 // tecky prepinani obrazovek zacinaji na 298.
 #define FC_AQ_LABEL  266
 #define FC_AQ_VALUE  276
 
-// Sloupce denniho radku. Sloupecek srazek (modry obdelnik vpravo) ve verzi
-// 0.4.0 ZMIZEL - nemel popisek ani meritko, takze z nej neslo poznat nic, co
-// by uz nerikalo cislo vedle. Uvolnene misto dostala cisla.
-#define FC_D_NAME_X   10
-#define FC_D_ICON_X  105
-#define FC_D_TEMP_X  140
-#define FC_D_RAIN_X  265
-#define FC_D_WIND_X  375
+// Sloupce. Popisek drzi "St 31.12." velikosti 2 - devet znaku, 108 px, nejdelsi
+// datum, ktere obrazovka kdy vyrobi. Zbytek je rozlozeny po sirce 480 px, ktera
+// na rozdil od kulateho displeje nikde neubyva.
+#define FC_COL_LABEL  10
+#define FC_COL_ICON  140      // stred ikony
+#define FC_COL_TEMP  168
+#define FC_COL_RAIN  290
+#define FC_COL_WIND  385
+
+// Vitr pod touto hodnotou neni zprava a sloupec je lepsi nechat prazdny -
+// stejne pravidlo, jakym se odjakziva ridi srazky.
+#define WIND_SHOW_KMH 12.0f
 
 static unsigned long s_lastDraw = 0;
+static int           s_lastHour = -1;
+static bool          s_lastValid = false;
 
-void ScreenForecast_Enter() { s_lastDraw = 0; }
+void ScreenForecast_Enter() { s_lastDraw = 0; s_lastHour = -1; }
 
-// Predpoved se meni po pulhodinach, takze prekreslovat casteji nez jednou za
-// deset sekund nema co ukazat. Perioda navic pokryva prechod hodiny, po kterem
-// se posune prvni sloupec.
+// Radky se meni jen s celou hodinou (posune se "nyni" a okna) a s novymi daty.
+// Hodiny v hlavicce se meni kazdou minutu a kresli se se stejnym prekreslenim.
 bool ScreenForecast_Tick() {
-  unsigned long now = millis();
-  if (s_lastDraw && now - s_lastDraw < 10000UL) return false;
-  s_lastDraw = now;
-  return true;
+  bool want = false;
+  const bool valid = Forecast_Valid();
+  time_t now = time(nullptr);
+  struct tm lt; localtime_r(&now, &lt);
+  if (valid != s_lastValid || lt.tm_hour != s_lastHour) {
+    s_lastValid = valid;
+    s_lastHour = lt.tm_hour;
+    want = true;
+  }
+  if (UI_StatusLineChanged()) want = true;
+
+  // Pojistka: nova predpoved prijde kazdou pulhodinu a na jeji obsah se jinak
+  // nic nepta. Jednou za minutu prekreslit nic nestoji.
+  const unsigned long ms = millis();
+  if (!s_lastDraw || ms - s_lastDraw >= 60000UL) want = true;
+  if (want) s_lastDraw = ms ? ms : 1;
+  return want;
 }
 
 // Text, ktery se nakresli jen kdyz je pro nej misto. Vraci, jestli se kreslil.
@@ -74,10 +99,6 @@ static bool textIfFree(const char* s, int x, int y, uint16_t color, uint8_t size
   gfx->setCursor(x, y);
   gfx->print(s);
   return true;
-}
-
-static void textCenteredIfFree(const char* s, int cx, int y, uint16_t color, uint8_t size) {
-  textIfFree(s, cx - Layout_TextW(s, size) / 2, y, color, size);
 }
 
 // Text BEZ narokovani mista. Pouziva se uvnitr skupin, ktere si uz misto
@@ -116,15 +137,6 @@ static int valueWithUnit(int x, int y, const char* value, const char* unit,
   return x + total;
 }
 
-// Vycentrovana dvojice hodnota + jednotka (hodinove sloupce).
-static void valueWithUnitCentered(int cx, int y, const char* value, const char* unit,
-                                  uint16_t vColor, uint16_t uColor) {
-  const int vw = Layout_TextW(value, 2);
-  const int uw = (unit && unit[0]) ? Layout_TextW(unit, 1) : 0;
-  const int total = vw + (uw ? 2 + uw : 0);
-  valueWithUnit(cx - total / 2, y, value, unit, vColor, uColor);
-}
-
 // Skupina "maly popisek nahore, velka hodnota pod nim" pro radek ovzdusi.
 // Naroky obou radku by se pretly, takze se zabira jeden obdelnik pres oba.
 static void labelledValue(int x, int yLabel, int yValue, const char* label,
@@ -159,98 +171,137 @@ static uint16_t tempColor(float c) {
 }
 
 // -----------------------------------------------------------------------------
-//  Hodinove sloupce
+//  Radky
 // -----------------------------------------------------------------------------
-static void drawHours() {
-  const int n = Forecast_HourCount();
-  const FcHour* h = Forecast_Hours();
+static bool isNightAt(time_t t) {
   time_t rise = 0, set = 0;
-  const bool haveSun = Forecast_SunTimes(&rise, &set);
+  if (!Forecast_SunTimes(&rise, &set)) return false;
+  // Casy slunce jsou dnesni; pro okno pres pulnoc staci porovnat cas dne.
+  // Porovnava se cas dne v UTC. Kde zapad v UTC pripada az za pulnoc (Amerika),
+  // je poradi obracene a noc je to, co lezi mezi zapadem a vychodem.
+  const long day = 86400L;
+  const long tt = (long)(t % day), rr = (long)(rise % day), ss = (long)(set % day);
+  if (rr <= ss) return (tt < rr || tt >= ss);
+  return (tt >= ss && tt < rr);
+}
 
-  for (int i = 0; i < n && i < FORECAST_HOURS; i++) {
-    const int cx = i * FC_HRS_W + FC_HRS_W / 2;
+// Spolecny zbytek vsech radku: ikona, srazky, vitr. Teplotu si kresli radek
+// sam, protoze u dnu jsou to dve cisla.
+static void drawTail(int y, int code, bool night, float precip, float wind, int iconR) {
+  if (Layout_Claim(FC_COL_ICON - iconR, y + 8 - iconR, 2 * iconR, 2 * iconR))
+    WxIcon_Draw(FC_COL_ICON, y + 8, iconR, code, night);
 
-    struct tm lt;
-    localtime_r(&h[i].t, &lt);
-    char lab[8];
-    snprintf(lab, sizeof(lab), "%dh", lt.tm_hour);
-    textCenteredIfFree(lab, cx, FC_HRS_LABEL, C_GRAY, 1);
-
-    // Ikona ma v noci mesic misto slunce. "Noc" se urcuje z casu TE hodiny,
-    // ne z aktualniho stavu - sloupec pro tretí hodinu rano ma byt nocni,
-    // i kdyz se na nej divate v poledne.
-    bool night = false;
-    if (haveSun) night = (h[i].t < rise || h[i].t >= set);
-    WxIcon_Draw(cx, FC_HRS_ICON, 16, h[i].code, night);
-
-    // Jednotka malym pismem za hodnotou. Znaminko stupne se nepouziva -
-    // vestaveny font je 7bitove ASCII a "°" by vyslo jako nahodny znak,
-    // takze je tu OUTSIDE_DEG_TEXT ("degC" nebo "\xB0C", viz Config.h).
-    char t[8];
-    snprintf(t, sizeof(t), "%d", (int)lroundf(h[i].temp));
-    valueWithUnitCentered(cx, FC_HRS_TEMP, t, OUTSIDE_DEG_TEXT,
-                          tempColor(h[i].temp), C_GRAY);
-
-    if (h[i].precip > 0.05f) {
-      char p[10];
-      snprintf(p, sizeof(p), "%.1f", h[i].precip);
-      valueWithUnitCentered(cx, FC_HRS_RAIN, p, "mm", C_CYAN, C_GRAY);
-    }
+  // Srazky jen kdyz nejake jsou - sloupec "0.0" je sum.
+  if (precip >= 0.05f) {
+    char p[10];
+    snprintf(p, sizeof(p), "%.1f", precip);
+    valueWithUnit(FC_COL_RAIN, y, p, "mm", C_CYAN, C_GRAY);
+  }
+  if (wind >= WIND_SHOW_KMH) {
+    char w[10];
+    snprintf(w, sizeof(w), "%d", (int)lroundf(wind));
+    valueWithUnit(FC_COL_WIND, y, w, "km/h", C_LTGRAY, C_GRAY);
   }
 }
 
-// -----------------------------------------------------------------------------
-//  Denni radky
-// -----------------------------------------------------------------------------
-static void drawDays() {
-  const int n = Forecast_DayCount();
-  const FcDay* d = Forecast_Days();
+static void drawSingleTemp(int y, float temp) {
+  char t[8];
+  snprintf(t, sizeof(t), "%d", (int)lroundf(temp));
+  valueWithUnit(FC_COL_TEMP, y, t, OUTSIDE_DEG_TEXT, tempColor(temp), C_GRAY);
+}
 
-  for (int i = 0; i < n && i < FORECAST_DAYS; i++) {
-    const int y = FC_DAY_Y0 + i * FC_DAY_H;
+// --- "nyni" ------------------------------------------------------------------
+// Prednost ma blok "current" pred hourly[0]: hodinova hodnota je modelove cislo
+// za celou hodinu, takze ve 14:55 popisuje hodinu, ktera uz skoro skoncila.
+static void drawNowRow(int rowY) {
+  const FcHour* hrs = Forecast_Hours();
+  if (Forecast_HourCount() < 1 && !Forecast_CurrentValid()) return;
+  const int y = rowY + 5;
 
-    struct tm lt;
-    localtime_r(&d[i].t, &lt);
-    char name[12];
-    snprintf(name, sizeof(name), "%s %d.", Lang_WeekdayShort(lt.tm_wday), lt.tm_mday);
-    textIfFree(name, FC_D_NAME_X, y + 12, C_WHITE, 2);
-
-    WxIcon_Draw(FC_D_ICON_X, y + 20, 18, d[i].code, false);
-
-    // Maximum oranzove, minimum modre - dve cisla vedle sebe se tim rozlisi
-    // i bez popisku.
-    char tmax[8], tmin[8];
-    snprintf(tmax, sizeof(tmax), "%d", (int)lroundf(d[i].tmax));
-    snprintf(tmin, sizeof(tmin), "%d", (int)lroundf(d[i].tmin));
-    // Maximum, lomitko, minimum a az za tim jednotka malym pismem - jedna
-    // rezervace pres celou skupinu, jinak by se naroky prekryly (viz
-    // poznamka u valueWithUnit). Obe cisla se barvi podle sve hodnoty
-    // stejne jako hodinove teploty, takze barva znamena vsude totez;
-    // ktere je maximum a ktere minimum, rika poradi.
-    {
-      const int wMax = Layout_TextW(tmax, 2), wSep = Layout_TextW("/", 2);
-      const int wMin = Layout_TextW(tmin, 2), wU = Layout_TextW(OUTSIDE_DEG_TEXT, 1);
-      const int total = wMax + 4 + wSep + 4 + wMin + 3 + wU;
-      if (Layout_Claim(FC_D_TEMP_X - 2, y + 10, total + 4, LY_CHAR_H(2) + 4)) {
-        int x = FC_D_TEMP_X;
-        textRaw(tmax, x, y + 12, tempColor(d[i].tmax), 2); x += wMax + 4;
-        textRaw("/",  x, y + 12, C_GRAY,   2); x += wSep + 4;
-        textRaw(tmin, x, y + 12, tempColor(d[i].tmin), 2); x += wMin + 3;
-        textRaw(OUTSIDE_DEG_TEXT, x, y + 20, C_GRAY, 1);
-      }
-    }
-
-    if (d[i].precip > 0.05f) {
-      char r[10];
-      snprintf(r, sizeof(r), "%.1f", d[i].precip);
-      valueWithUnit(FC_D_RAIN_X, y + 12, r, "mm", C_CYAN, C_GRAY);
-    }
-    {
-      char w[10];
-      snprintf(w, sizeof(w), "%.0f", d[i].wind);
-      valueWithUnit(FC_D_WIND_X, y + 12, w, "km/h", C_LTGRAY, C_GRAY);
-    }
+  float temp, precip, wind; int code;
+  if (Forecast_CurrentValid()) {
+    temp = Forecast_CurrentTemp(); precip = Forecast_CurrentPrecip();
+    wind = Forecast_CurrentWind(); code = Forecast_CurrentCode();
+  } else {
+    temp = hrs[0].temp; precip = hrs[0].precip; wind = hrs[0].wind; code = hrs[0].code;
   }
+
+  textIfFree(T(S_NOW), FC_COL_LABEL, y, C_WHITE, 2);
+  drawSingleTemp(y, temp);
+  drawTail(y, code, isNightAt(time(nullptr)), precip, wind, 10);
+}
+
+// --- Okno FORECAST_WIN_H hodin -----------------------------------------------
+// Kazda hodnota se agreguje tak, jak se pouziva:
+//   teplota - prumer ("bude kolem"),
+//   srazky  - SOUCET (zalezi na tom, kolik spadne celkem),
+//   vitr    - MAXIMUM (jedna narazova hodina zkazi cele okno),
+//   ikona   - nejvyssi kod WMO, coz je skoro "nejhorsi z nich": stupnice jde
+//             jasno, oblacno, mlha, mrholeni, dest, snih, prehanky, bourka.
+static void drawWindowRow(int i0, int rowY) {
+  const FcHour* hrs = Forecast_Hours();
+  const int n = Forecast_HourCount();
+  const int i1 = i0 + FORECAST_WIN_H - 1;
+  if (i1 >= n) return;
+  const int y = rowY + 5;
+
+  float sumT = 0, sumP = 0, maxW = 0;
+  int code = 0;
+  for (int i = i0; i <= i1; i++) {
+    sumT += hrs[i].temp;
+    sumP += hrs[i].precip;
+    if (hrs[i].wind > maxW) maxW = hrs[i].wind;
+    if (hrs[i].code > code) code = hrs[i].code;
+  }
+
+  // Popisek od zacatku prvni hodiny do KONCE posledni, takze tri hodiny se
+  // opravdu ctou jako tri: 12-15, ne 12-14. Okno koncici o pulnoci je 21-24.
+  struct tm a, b;
+  localtime_r(&hrs[i0].t, &a);
+  const time_t endT = hrs[i1].t + 3600;
+  localtime_r(&endT, &b);
+  int endHour = b.tm_hour;
+  if (endHour == 0) endHour = 24;
+
+  char lbl[12];
+  snprintf(lbl, sizeof(lbl), "%02d-%02dh", a.tm_hour, endHour);
+  textIfFree(lbl, FC_COL_LABEL, y, C_GRAY, 2);
+  drawSingleTemp(y, sumT / (float)FORECAST_WIN_H);
+  drawTail(y, code, isNightAt(hrs[i0].t + (FORECAST_WIN_H * 3600) / 2), sumP, maxW, 10);
+}
+
+// --- Denni radek -------------------------------------------------------------
+// "dnes" si nechava jmeno, protoze ho nikdo nepocita a datum nepotrebuje. Ostatni
+// radky jsou den v tydnu a datum: "St 16.9." - den se cte, datum se kontroluje
+// proti kalendari, a tyden dopredu chcete obe.
+static void drawDayRow(const FcDay& d, int index, int rowY) {
+  const int y = rowY + 5;
+  struct tm lt; localtime_r(&d.t, &lt);
+
+  char name[16];
+  if (index == 0) snprintf(name, sizeof(name), "%s", T(S_TODAY));
+  else snprintf(name, sizeof(name), "%s %d.%d.", Lang_WeekdayShort(lt.tm_wday),
+                lt.tm_mday, lt.tm_mon + 1);
+  textIfFree(name, FC_COL_LABEL, y, index == 0 ? C_WHITE : C_GRAY, 2);
+
+  // Maximum, lomitko, minimum a za tim jednotka malym pismem - jedna rezervace
+  // pres celou skupinu (viz poznamka u valueWithUnit). Obe cisla se barvi podle
+  // sve hodnoty stejne jako teploty nahore; ktere je ktere, rika poradi.
+  char tmax[8], tmin[8];
+  snprintf(tmax, sizeof(tmax), "%d", (int)lroundf(d.tmax));
+  snprintf(tmin, sizeof(tmin), "%d", (int)lroundf(d.tmin));
+  const int wMax = Layout_TextW(tmax, 2), wSep = Layout_TextW("/", 2);
+  const int wMin = Layout_TextW(tmin, 2), wU = Layout_TextW(OUTSIDE_DEG_TEXT, 1);
+  const int total = wMax + 2 + wSep + 2 + wMin + 3 + wU;
+  if (Layout_Claim(FC_COL_TEMP - 2, y - 2, total + 4, LY_CHAR_H(2) + 4)) {
+    int x = FC_COL_TEMP;
+    textRaw(tmax, x, y, tempColor(d.tmax), 2); x += wMax + 2;
+    textRaw("/",  x, y, C_GRAY, 2);            x += wSep + 2;
+    textRaw(tmin, x, y, tempColor(d.tmin), 2); x += wMin + 3;
+    textRaw(OUTSIDE_DEG_TEXT, x, y + 8, C_GRAY, 1);
+  }
+
+  drawTail(y, d.code, false, d.precip, d.wind, 11);
 }
 
 // -----------------------------------------------------------------------------
@@ -260,12 +311,12 @@ static const char* aqiWord(int aqi) {
   // Evropsky AQI: 0-20 velmi dobre, 20-40 dobre, 40-60 stredni,
   // 60-80 spatne, 80-100 velmi spatne, nad 100 extremne spatne.
   if (aqi < 0)   return "";
-  if (aqi <= 20) return "velmi dobre";
-  if (aqi <= 40) return "dobre";
-  if (aqi <= 60) return "stredni";
-  if (aqi <= 80) return "spatne";
-  if (aqi <= 100) return "velmi spatne";
-  return "extremne spatne";
+  if (aqi <= 20) return LT("velmi dobre", "velmi dobré", "velmi dobre", "veľmi dobré");
+  if (aqi <= 40) return LT("dobre", "dobré", "dobre", "dobré");
+  if (aqi <= 60) return LT("stredni", "střední", "stredne", "stredné");
+  if (aqi <= 80) return LT("spatne", "špatné", "zle", "zlé");
+  if (aqi <= 100) return LT("velmi spatne", "velmi špatné", "velmi zle", "veľmi zlé");
+  return LT("extremne spatne", "extrémně špatné", "extremne zle", "extrémne zlé");
 }
 
 static uint16_t aqiColor(int aqi) {
@@ -312,7 +363,7 @@ static void drawAirQuality() {
     // nepozna, takze "z/m3" jen zabiralo misto vedle nazvu druhu, ktery
     // je tou uzitecnou informaci.
     char label[20];
-    snprintf(label, sizeof(label), "Pyl %s", AirQuality_PollenWorst());
+    snprintf(label, sizeof(label), "%s %s", T(S_POLLEN), AirQuality_PollenWorst());
     char v[10];
     snprintf(v, sizeof(v), "%.0f", pollen);
     labelledValue(330, FC_AQ_LABEL, FC_AQ_VALUE, label, v, nullptr,
@@ -327,24 +378,12 @@ void ScreenForecast_Draw() {
   Layout_Begin();
   Layout_Reserve(LY_DOTS_X, LY_DOTS_Y0, LY_DOTS_W, LY_DOTS_H);
 
-  // Hlavicka
-  gfx->setTextSize(2); gfx->setTextColor(C_CYAN);
-  gfx->setCursor(10, FC_HDR_Y);
-  gfx->print("Predpoved");
-  {
-    char st[OUTSIDE_TEXT_MAX];
-    Outside_StatusText(st, sizeof(st));
-    if (st[0]) {
-      gfx->setTextSize(1); gfx->setTextColor(C_GRAY);
-      gfx->setCursor(LCD_WIDTH - 10 - Layout_TextW(st, 1), FC_HDR_Y + 6);
-      gfx->print(st);
-    }
-  }
-  Layout_ReserveBand(FC_HDR_Y - 2, 24);
+  UI_DrawHeader(T(S_FORECAST), C_CYAN);
+  Layout_ReserveBand(UI_HDR_Y - 2, UI_HDR_H);
 
   if (!Forecast_Valid()) {
     UI_TextCentered(T(S_LOADING), LCD_HEIGHT / 2 - 10, C_GRAY, 2);
-    UI_TextCentered("predpoved z Open-Meteo", LCD_HEIGHT / 2 + 18, C_GRAY, 1);
+    UI_TextCentered(LT("predpoved z Open-Meteo", "předpověď z Open-Meteo", "predpoved z Open-Meteo", "predpoveď z Open-Meteo"), LCD_HEIGHT / 2 + 18, C_GRAY, 1);
     return;
   }
 
@@ -355,7 +394,20 @@ void ScreenForecast_Draw() {
   Layout_ReserveBand(FC_SEP2_Y - 1, 3);
   Layout_ReserveBand(FC_SEP3_Y - 1, 3);
 
-  drawHours();
-  drawDays();
+  // --- nyni a dve okna po FORECAST_WIN_H hodinach ---
+  drawNowRow(FC_HOUR_Y0);
+  drawWindowRow(1,                  FC_HOUR_Y0 + FC_HOUR_H);
+  drawWindowRow(1 + FORECAST_WIN_H, FC_HOUR_Y0 + 2 * FC_HOUR_H);
+
+  // --- dnes a dalsi dny ---
+  // Pocet radku plyne z mista mezi carami, ne z konstanty - kdyby se nekdy
+  // posunula, rozvrzeni zustane poctive misto preteceni do radku ovzdusi.
+  const FcDay* d = Forecast_Days();
+  int dn = Forecast_DayCount();
+  const int fits = (FC_SEP3_Y - 4 - FC_DAY_Y0) / FC_DAY_H;
+  if (dn > fits) dn = fits;
+  if (dn > FORECAST_DAYS) dn = FORECAST_DAYS;
+  for (int i = 0; i < dn; i++) drawDayRow(d[i], i, FC_DAY_Y0 + i * FC_DAY_H);
+
   drawAirQuality();
 }

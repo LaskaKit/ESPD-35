@@ -11,11 +11,21 @@
 #include "Status.h"   // jednoradkove hlaseni pro stavovou stranku
 #include "NetSink.h"  // skenovani tela za behu, bezpecne vuci chunked
 #include <string.h>   // strstr
+#include "TimeUtil.h" // TimeUtil_UtcToEpoch
 
 static const char* NAME_PREFIX = "pacz2gmaps3.z_max3d.";
 
 static void (*s_poll)() = nullptr;
 void CHMU_SetPollFn(void (*fn)()) { s_poll = fn; }
+
+// --- CHMU / CHMU masked (0.8.0) ----------------------------------------------
+// Tentyz kompozit, jednou cely a jednou "masked": CHMU ho porovna s mericim ve
+// vysce 2 km a plnou barvou nechava jen srazky, ktere dopadaji na zem. Lisi se
+// jen adresar - nazvy souboru i paleta jsou stejne.
+static bool s_masked = false;
+void CHMU_SetMasked(bool masked) { s_masked = masked; }
+bool CHMU_Masked() { return s_masked; }
+static const char* baseUrl(bool masked) { return masked ? CHMU_INDEX_URL_MASKED : CHMU_INDEX_URL; }
 
 // -----------------------------------------------------------------------------
 //  Spolecne pomucky
@@ -34,18 +44,21 @@ static String extractTimestamp(const String& name) {
 }
 
 static String timeTextFromName(const String& name) {
+  // Posun UTC -> mistni cas z DATA SNIMKU, ne z aktualnich hodin: pres noc,
+  // kdy se meni letni cas, by jinak byl popisek o hodinu vedle. (0.5.3)
   String ts = extractTimestamp(name);
   if (ts.length() < 12) return "";
+  int Y  = ts.substring(0, 4).toInt();
+  int Mo = ts.substring(4, 6).toInt();
+  int D  = ts.substring(6, 8).toInt();
   int hh = ts.substring(8, 10).toInt();
   int mm = ts.substring(10, 12).toInt();
-  time_t now = time(nullptr);
-  struct tm lt; localtime_r(&now, &lt);
-  struct tm gt; gmtime_r(&now, &gt);
-  int off = lt.tm_hour - gt.tm_hour;
-  if (off < -12) off += 24; if (off > 12) off -= 24;
-  hh = (hh + off + 24) % 24;
+  if (Y < 2000 || Mo < 1 || Mo > 12 || D < 1 || D > 31) return "";
+  time_t utc = TimeUtil_UtcToEpoch(Y, Mo, D, hh, mm, 0);
+  struct tm lt;
+  localtime_r(&utc, &lt);
   char out[6];
-  snprintf(out, sizeof(out), "%02d:%02d", hh, mm);
+  snprintf(out, sizeof(out), "%02d:%02d", lt.tm_hour, lt.tm_min);
   return String(out);
 }
 
@@ -57,27 +70,29 @@ static String timeTextFromName(const String& name) {
 // takze uriznuty PNG propadl do dekoderu a projevil se jako pruh smeti pres
 // snimek. Uvnitr relace (viz CHMU_FetchAnim) navic vsechny snimky sdileji
 // jedno spojeni misto sedmi handshaku za sebou.
-static bool downloadNameTo(const String& name, uint8_t* buf, size_t cap, size_t* outSize) {
+static bool downloadNameTo(bool masked, const String& name, uint8_t* buf, size_t cap, size_t* outSize) {
   *outSize = 0;
   if (!buf) return false;
-  String url = String(CHMU_INDEX_URL) + name;
-  return Net_GetBinary(url.c_str(), buf, cap, outSize, "CHMU");
+  String url = String(baseUrl(masked)) + name;
+  if (!Net_GetBinary(url.c_str(), buf, cap, outSize, "CHMU")) return false;
+
+  // Kontrola PNG signatury. HTTP 200 jeste neznamena obrazek - chybova stranka
+  // z proxy nebo CDN prijde taky jako 200, projde kontrolou delky a PNGdec ji
+  // pak bud odmitne bez vysvetleni, nebo z ni vykresli smeti. Tady se to pozna
+  // levne a s citelnym radkem v logu.
+  if (*outSize < 8 || memcmp(buf, "\x89PNG\r\n\x1a\n", 8) != 0) {
+    Serial.printf("CHMU: %s neni PNG (%u B)\n", name.c_str(), (unsigned)*outSize);
+    *outSize = 0;
+    return false;
+  }
+  return true;
 }
 
 // -----------------------------------------------------------------------------
 //  Jeden (nejnovejsi) snimek - puvodni API
 // -----------------------------------------------------------------------------
-static String   s_lastName;
-static bool     s_hasSnapshot = false;
-static uint8_t* s_pngBuf = nullptr;
-static size_t   s_pngSize = 0;
+String CHMU_TimeTextFromName(const String& name) { return timeTextFromName(name); }
 
-bool     CHMU_HasSnapshot() { return s_hasSnapshot; }
-uint8_t* CHMU_Data() { return s_pngBuf; }
-size_t   CHMU_DataSize() { return s_pngSize; }
-
-// Vysledek scanChunkLatest. Ve statikach, aby sel scanner predat spolecnemu
-// stahovaci indexu nize jako obycejny ukazatel na funkci.
 static String s_newestTs;
 static String s_latestName;
 
@@ -108,7 +123,7 @@ static void scanChunkLatest(const char* text, void* user) {
 //  scannerem - proto jeden spolecny kus a ukazatel na funkci. Okna se
 //  prekryvaji, takze jmeno muze dorazit dvakrat; oba scannery to snesou.
 // -----------------------------------------------------------------------------
-static bool fetchIndex(NetScanFn scan) {
+static bool fetchIndex(bool masked, NetScanFn scan) {
   if (WiFi.status() != WL_CONNECTED) { Status_Set(ST_RADAR, "bez WiFi"); return false; }
   if (!Net_HeapOk("CHMU")) { Status_Set(ST_RADAR, "malo pameti"); return false; }
 
@@ -117,7 +132,7 @@ static bool fetchIndex(NetScanFn scan) {
   HTTPClient http;
   http.setConnectTimeout(8000);   // jen TCP connect, NE handshake
   http.setTimeout(15000);
-  if (!http.begin(client, CHMU_INDEX_URL)) { Status_Set(ST_RADAR, "begin() selhalo"); return false; }
+  if (!http.begin(client, baseUrl(masked))) { Status_Set(ST_RADAR, "begin() selhalo"); return false; }
   http.collectHeaders(NET_DATE_HEADER, 1);
 
   int code = http.GET();
@@ -136,37 +151,25 @@ static bool fetchIndex(NetScanFn scan) {
   return true;
 }
 
-bool CHMU_FetchLatest() {
-  s_newestTs = "";
-  s_latestName = "";
-  if (!fetchIndex(scanChunkLatest)) return s_hasSnapshot;
-  if (s_latestName.isEmpty()) {
-    Status_Set(ST_RADAR, "index bez snimku");
-    return s_hasSnapshot;
-  }
-  if (s_latestName == s_lastName && s_hasSnapshot) return true;
-
-  if (!s_pngBuf) {
-    s_pngBuf = (uint8_t*)heap_caps_malloc(CHMU_MAX_PNG, MALLOC_CAP_SPIRAM);
-    if (!s_pngBuf) s_pngBuf = (uint8_t*)malloc(CHMU_MAX_PNG);
-  }
-  if (!s_pngBuf) { Status_Set(ST_RADAR, "nedostatek pameti"); return s_hasSnapshot; }
-
-  if (downloadNameTo(s_latestName, s_pngBuf, CHMU_MAX_PNG, &s_pngSize)) {
-    s_lastName = s_latestName;
-    s_hasSnapshot = true;
-    Status_Set(ST_RADAR, "OK, 1 snimek");
-    return true;
-  }
-  Status_Set(ST_RADAR, "snimek se nestahl");
-  return s_hasSnapshot;
-}
-
-String CHMU_SnapshotTimeText() { return timeTextFromName(s_lastName); }
 
 // -----------------------------------------------------------------------------
 //  Animace - nejnovejsich N ramcu
 // -----------------------------------------------------------------------------
+// Jediny nejnovejsi snimek do bufferu volajiciho (0.8.0, hlidani bourky).
+// Animaci se nesaha - hlidac si snimek analyzuje sam a nic se nekresli.
+bool CHMU_FetchLatest(bool masked, uint8_t* buf, size_t cap, size_t* outSize, String* name) {
+  if (outSize) *outSize = 0;
+  s_newestTs = "";
+  s_latestName = "";
+  if (!fetchIndex(masked, scanChunkLatest)) return false;
+  if (s_latestName.isEmpty()) return false;
+  size_t sz = 0;
+  if (!downloadNameTo(masked, s_latestName, buf, cap, &sz)) return false;
+  if (outSize) *outSize = sz;
+  if (name) *name = s_latestName;
+  return true;
+}
+
 static uint8_t* s_animBuf[CHMU_ANIM_MAX] = {0};
 static size_t   s_animSize[CHMU_ANIM_MAX] = {0};
 static String   s_animName[CHMU_ANIM_MAX];
@@ -175,6 +178,7 @@ static int      s_animCount = 0;
 int      CHMU_AnimCount() { return s_animCount; }
 uint8_t* CHMU_AnimData(int i) { return (i >= 0 && i < s_animCount) ? s_animBuf[i] : nullptr; }
 size_t   CHMU_AnimSize(int i) { return (i >= 0 && i < s_animCount) ? s_animSize[i] : 0; }
+String   CHMU_AnimName(int i) { return (i >= 0 && i < s_animCount) ? s_animName[i] : String(""); }
 String   CHMU_AnimTimeText(int i) { return (i >= 0 && i < s_animCount) ? timeTextFromName(s_animName[i]) : String(""); }
 
 // Bezici "top-N" nejnovejsich nazvu (vzestupne dle casu).
@@ -224,7 +228,7 @@ int CHMU_FetchAnim(int wantN) {
 
   // 1) projdi index a najdi N nejnovejsich nazvu
   s_topCount = 0;
-  if (!fetchIndex(scanChunkTop)) return s_animCount;
+  if (!fetchIndex(s_masked, scanChunkTop)) return s_animCount;
   if (s_topCount == 0) { Status_Set(ST_RADAR, "index bez snimku"); return s_animCount; }
 
   // 2) stahni N nejnovejsich (top pole je vzestupne, bereme konec)
@@ -239,7 +243,7 @@ int CHMU_FetchAnim(int wantN) {
   for (int i = 0; i < n; i++) {
     if (!ensureAnimBuffer(i)) break;
     size_t sz = 0;
-    if (downloadNameTo(s_topName[startIdx + i], s_animBuf[i], CHMU_MAX_PNG, &sz)) {
+    if (downloadNameTo(s_masked, s_topName[startIdx + i], s_animBuf[i], CHMU_MAX_PNG, &sz)) {
       s_animSize[i] = sz;
       s_animName[i] = s_topName[startIdx + i];
       got++;
