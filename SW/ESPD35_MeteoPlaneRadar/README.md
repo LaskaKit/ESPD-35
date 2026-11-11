@@ -7,25 +7,44 @@ Hodiny, radar letadel, srážkový meteoradar a předpověď počasí na desce
 > (autor Petr, původně pro chiptron.cz). Portováno a rozšířeno pro
 > [laskakit.cz](https://www.laskakit.cz).
 
+Aktuální verze: **0.5.0** — změny viz [CHANGELOG.md](CHANGELOG.md).
+
+![Obrazovky: hodiny, předpověď, cena a výroba elektřiny](obrazovky.png)
+
 ---
 
 ## Co to umí
 
-Pět obrazovek. Přepínají se dlouhým stiskem nebo klepnutím na tečky dole.
-Čtyři z nich se dají vypnout.
+Sedm obrazovek. Přepínají se dlouhým stiskem nebo klepnutím na tečky dole.
+Šest z nich se dá vypnout; obě energetické jsou ve výchozím stavu vypnuté.
 
 | Obrazovka | Co ukazuje |
 | --- | --- |
 | 🕐 **Hodiny** | Čas, datum, aktuální počasí, vítr, východ a západ slunce. Sekundy běží po elipse kolem displeje. |
-| ✈️ **Letadla** | Radar z [adsb.fi](https://adsb.fi) — silueta natočená podle kurzu, barva podle letové hladiny. V panelu detail nejbližšího letadla včetně trasy letu. Rozsahy 10 / 25 / 50 / 100 km. |
-| 🌧️ **Meteoradar** | Srážky z [ČHMÚ](https://opendata.chmi.cz), animace 6 snímků za posledních 25 minut. Rozsahy 25 / 50 / 100 / 200 km a celá ČR. |
-| 🌤️ **Předpověď** | 6 hodin, 3 dny, ovzduší (AQI, PM2.5, pyl). Z [Open‑Meteo](https://open-meteo.com). |
+| ✈️ **Letadla** | Radar z [adsb.fi](https://adsb.fi) — ikona podle typu letadla natočená podle kurzu, barva podle výšky (barvy i hranice jdou změnit). Volitelně se obrazovka ukáže sama, jen když letí letadlo poblíž nebo ve výhledu z okna. V panelu detail nejbližšího letadla včetně trasy letu. Rozsahy 10 / 25 / 50 / 100 km. |
+| 🌧️ **Meteoradar** | Srážky z [ČHMÚ](https://opendata.chmi.cz), animace 6 snímků za posledních 25 minut, zdroj ČHMÚ nebo ČHMÚ masked. Volitelně jen při bouřce v okolí. Rozsahy 25 / 50 / 100 / 200 km a celá ČR. |
+| 🌤️ **Předpověď** | Nyní a dvě tříhodinová okna (např. 14‑17h), dnešek a další čtyři dny s datem, ovzduší (AQI, PM2.5, pyl). Z [Open‑Meteo](https://open-meteo.com). |
+| ⚡ **Cena elektřiny** | Spotová cena z denního trhu OTE po čtvrthodinách ([spotovaelektrina.cz](https://spotovaelektrina.cz)). Den jako prstenec od zelené po červenou, cena právě teď, nejlevnější a nejdražší blok. Klepnutím dnes / zítra. Jen pro ČR. |
+| 🏭 **Výroba elektřiny** | Z čeho se právě vyrábí, podíl OZE, spotřeba a vývoz/dovoz. ENTSO‑E přes [energy‑charts.info](https://energy-charts.info), země volitelná. |
 | ⚙️ **Nastavení** | Jas, orientace mapy, jednotky, adresa webu, tovární reset. |
 
 Všechno ostatní se nastavuje **v prohlížeči** — poloha, obrazovky, filtry
 letadel, WiFi i aktualizace firmwaru.
 
 Polohu není třeba zadávat, zjistí se podle IP adresy.
+
+Text se kreslí vyhlazeným písmem s diakritikou (Inter, Poppins, Inter tenké;
+lze vrátit původní pixelové). Deska si pamatuje až tři WiFi sítě.
+
+Jazyk displeje i webového nastavení je **čeština** nebo **slovenčina**
+(Poloha a displej → Jazyk).
+
+### Home Assistant
+
+Po zapnutí na záložce **Home Assistant** vrací
+`http://espd35meteoradar.local/api/ha` JSON (počasí, cena elektřiny, letadla,
+bouřka, …) pro integraci RESTful. Hotový blok do `configuration.yaml` se
+dá na té záložce zkopírovat. Ve výchozím stavu vypnuto.
 
 ---
 
@@ -75,27 +94,45 @@ i na obrazovce Nastavení).
 | Přejetí prstem vlevo / vpravo | změna rozsahu |
 | Klepnutí na letadlo | zafixuje ho v detailu |
 | Klepnutí do prázdné mapy | zpět na nejbližší letadlo |
+| Klepnutí na prstenec ceny | vypíše vybranou čtvrthodinu |
+| Klepnutí doprostřed ceny / swipe | dnes ↔ zítra |
 
 ### Nastavení v prohlížeči
 
-Šest záložek:
+Osm záložek:
 
 - **Stav** — čas, adresa, signál, doba běhu, volná paměť, stav zdrojů dat.
   Odsud jde přepnout obrazovku i rozsah na dálku.
-- **Poloha a displej** — poloha (ručně nebo vyhledáním města), jas ve dne
-  a v noci, automatické přepínání podle slunce.
-- **Obrazovky** — které se zobrazují, automatické střídání, styl sekund.
-- **Letadla** — jednotky, orientace mapy, výškové pásmo, filtry, hlídaný znak.
-- **WiFi** — vyhledání sítí a připojení.
-- **Správa** — heslo, záloha nastavení, aktualizace firmwaru, tovární reset.
+- **Poloha a displej** — poloha (ručně nebo vyhledáním města), jazyk
+  (čeština / slovenčina), jas ve dne a v noci, automatické přepínání podle
+  slunce, písmo.
+- **Obrazovky** — které se zobrazují, automatické střídání, styl sekund;
+  meteoradar: zdroj (ČHMÚ / ČHMÚ masked), legenda a „jen při bouřce“.
+- **Letadla** — jednotky, směr okna (= co je nahoře na radaru), výšky,
+  filtry, hlídaný znak, výhled z okna, letadlo poblíž, barvy výšek, ikony.
+- **Energie** — přirážka k burzovní ceně a DPH, země pro výrobu elektřiny.
+- **Home Assistant** — data pro integraci RESTful (viz níže).
+- **WiFi** — vyhledání sítí, připojení, tři uložené sítě.
+- **Správa** — aktualizace firmwaru, záloha, restart, tovární reset, změna
+  hesla správce.
 
-Změny platí **po klepnutí na Uložit nastavení**. Restart není potřeba.
+Změny platí **po klepnutí na Uložit nastavení**; restart není potřeba.
+Záložky Stav, WiFi a Správa mají vlastní tlačítka a Uložit na nich není.
+Nastavení vypnuté funkce (bouřka, výhled z okna, letadlo poblíž, Home
+Assistant) se ukážou až po jejím zapnutí. Nápovědy mají jednu větu, zbytek
+je pod „Více“.
+
+**Heslo správce** se zadává jen pro akci (obnova ze zálohy, restart, reset,
+změna hesla); nové heslo má vlastní pole a tlačítko a jde nastavit jen se
+současným heslem. Aktualizace firmwaru se na heslo zeptá sama (uživatel
+`admin`).
 
 ### Orientace mapy
 
-V Nastavení se volí, **který světový směr je nahoře** na radaru letadel — tedy
-směr, kterým se díváš z okna. Nastavíš `V` a letadla na displeji jsou ve stejném
-směru jako ta za sklem. Meteoradar se záměrně neotáčí, srážky se čtou severem
+V Nastavení (nebo na webu jako „Okno míří na“) se volí, **který světový směr
+je nahoře** na radaru letadel — tedy směr, kterým se díváš z okna. Nastavíš `V`
+a letadla na displeji jsou ve stejném směru jako ta za sklem. Stejný směr
+používá i výhled z okna. Meteoradar se záměrně neotáčí, srážky se čtou severem
 nahoru.
 
 ### Aktualizace firmwaru
@@ -111,7 +148,8 @@ Když se to nepovede, zůstane v desce původní verze.
 | Displej je černý | Nahrávalo se se špatným nastavením PSRAM. Nahraj znovu přes webový flasher. |
 | Prázdný meteoradar | Když neprší, kompozit je skoro černý. To je normální. |
 | Prázdný radar letadel | Zkus větší rozsah. V noci nebo mimo koridory nemusí být nic. |
-| Deska se nepřipojí k WiFi | Síť sama zapomene a vrátí se k QR kódu. Zkus zadat heslo znovu. |
+| Deska se nepřipojí k WiFi | Nově zadanou síť, ke které se nepřipojí, sama zapomene a vrátí se k QR kódu. Zkus zadat heslo znovu. |
+| Po výpadku visí QR kód, i když je síť uložená | Do 30 minut se deska sama restartuje a zkusí uložené sítě znovu (jen když se mezitím nikdo nepřipojí k jejímu přístupovému bodu). |
 | Nejde `espd35meteoradar.local` | Použij IP adresu z obrazovky Nastavení. |
 | Zapomenuté heslo správce | Tovární reset na obrazovce Nastavení (dvě klepnutí na červené tlačítko). |
 
@@ -182,10 +220,16 @@ Předvyplněné pro ESPD‑3.5 Rev 3.2:
 | `Net.*` | HTTPS GET na jednom místě, kontrola paměti |
 | `Status.*` | stav zdrojů dat pro webovou stránku |
 | `Layout.*` | pevné pásy obrazovek + kontrola překryvů |
-| `Lang.*` | texty (ASCII na displej, UTF‑8 na web) |
+| `Lang.*` | texty (ASCII na displej, UTF‑8 na web a pro vyhlazené písmo) |
+| `AAFont.*`, `AACanvas.h`, `ClockFonts.h` | vyhlazená písma s diakritikou (Inter, Poppins) |
+| `PlaneIcon.*` | ikony letadel podle typu |
+| `PlaneWatch.*`, `Geo.h` | letadlo poblíž / ve výhledu z okna |
+| `StormWatch.*` | hlídání bouřky na snímku ČHMÚ |
 | `ADSB.*`, `Route.*` | letadla a trasy letů |
 | `CHMU.*` | srážkový kompozit |
 | `Forecast.*` | předpověď, slunce, ovzduší — jedním požadavkem |
+| `TimeZone.*` | časové pásmo podle polohy (posun přichází s předpovědí) |
+| `Energy.*` | spotová cena a výroba elektřiny |
 | `EuBorder.*`, `EuMapData.h` | hranice a města |
 | `Screen*.cpp` | jednotlivé obrazovky |
 | `WebConfig.*`, `WebPage.h` | web server a stránka |
@@ -200,8 +244,9 @@ Předvyplněné pro ESPD‑3.5 Rev 3.2:
   písmen — proto `Lang.h`, ne `Strings.h`.
 - **Z obsluhy HTTP požadavku se nikdy nekreslí.** Požadavky se řadí do fronty
   a provádí je `loop()`. Jediná výjimka je průběh OTA.
-- **Font je 7bitové ASCII.** Na displej patří text bez diakritiky — `Lang.h`
-  drží obě verze.
+- **Pixelové písmo je 7bitové ASCII.** Řetězce na displej proto mají dvě
+  verze (`Lang.h`, makro `CZT`) — s diakritikou pro vyhlazené písmo, bez ní
+  pro pixelové.
 - **Klíče v NVS se nepřejmenovávají**, aby desky po aktualizaci nepřišly
   o nastavení. Když se mění význam, zakládá se nový klíč.
 - **Layout: jedna skupina = jeden nárok.** Hodnota a jednotka se nesmí
@@ -212,7 +257,7 @@ Předvyplněné pro ESPD‑3.5 Rev 3.2:
 Přes konektor označený **„USB"** (nativní USB ESP32‑S3), ne přes ten druhý.
 
 ```
-=== ESPD35_MeteoPlaneRadar v0.4.0 ===
+=== ESPD35_MeteoPlaneRadar v0.5.0 ===
 Duvod restartu: zapnuti napajeni
 WiFi ok, IP 192.168.1.42
 Web: http://espd35meteoradar.local/
@@ -235,6 +280,8 @@ Podrobnější výpisy: `TOUCH_DEBUG` a `LAYOUT_DEBUG` v `Config.h`.
 | Počasí | [Open‑Meteo](https://open-meteo.com/) | zdarma, bez klíče |
 | Poloha | [ip‑api.com](https://ip-api.com/) | detekce podle IP |
 | Mapa | Natural Earth, GeoNames | volné dílo / CC BY 4.0 |
+| Ikony letadel | [ADS-B Radar](https://adsb-radar.com/help/icons.html) | rozdělení typů do ikon; tvary kreslí firmware |
+| Písma | Inter, Poppins | SIL Open Font License 1.1 |
 
 > ⚠️ Zdroje vyžadují uvedení. Bezplatná API jsou pro **osobní nekomerční
 > použití**; pro komerční nasazení si zajisti odpovídající přístup k datům.

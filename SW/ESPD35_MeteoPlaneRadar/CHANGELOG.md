@@ -5,6 +5,202 @@ Verze je na jediném místě: `Version.h` (`FW_VERSION`).
 
 ---
 
+## [0.5.0] — 2026-11-05
+
+Převzato z [petus/MeteoPlaneRadar](https://github.com/petus/MeteoPlaneRadar)
+0.6.4–0.8.5. Níže jsou nejdřív funkce z řady 0.8, pod nimi změny z 0.6.4–0.7.0.
+
+### Přidáno (z 0.8.0–0.8.5)
+
+- **Vyhlazená písma na všech obrazovkách.** Inter, Poppins, Inter tenké nebo
+  původní pixelové — volí se ve webovém nastavení (Poloha a displej → Písmo).
+  Hodiny mají skutečné obrysy písma 98 px vysoké, ostatní text jde přes
+  `AACanvas` (odvozený `Arduino_Canvas`), takže se rozložení obrazovek nemění:
+  písmena jsou stejně vysoká jako u pixelového písma a text nikdy není širší.
+  Písma mají diakritiku, displej tedy píše „Předpověď“, „Út“, „listopadu“.
+  Data písem (`ClockFonts.h`) zabírají asi 680 kB flash.
+- **Ikony letadel podle typu** (`PlaneIcon.*`) podle schématu ADS-B Radar —
+  vrtulník má rotor, kluzák dlouhá křídla, A380 je větší než Cessna. Typ
+  z kódu typu z adsb.fi, jinak z kategorie vysílače. Vysvětlivky ikon jsou
+  na webu na záložce Letadla.
+- **Vlastní barvy výšek letadel.** Čtyři hranice v tisících stop a pět barev
+  na záložce Letadla; výchozí hodnoty jsou přesně dosavadní legenda této
+  desky, legenda na displeji se přizpůsobí.
+- **Letadlo poblíž.** Volitelně se obrazovka Letadla sama nestřídá, ale když se
+  letadlo přiblíží na zadanou vzdálenost (výchozí 5 km), deska na ni přepne,
+  otevře jeho detail a po zadané době (15 s) se vrátí. Každé letadlo jednou za
+  15 minut, dotyk ukázku ukončí (`PlaneWatch.*`).
+- **Výhled z okna.** Směr, šířka a dohled; letadlo ve výhledu má přednost před
+  bližším, které z okna vidět není. Výseč je zakreslená v radaru letadel.
+- **Meteoradar jen při bouřce.** Volitelně je meteoradar ve střídání jen tehdy,
+  když je do zadané vzdálenosti odraz zadané síly (výchozí 20 dBZ do 50 km).
+  Kontroluje se nejnovější snímek ČHMÚ každých 5 minut (`StormWatch.*`).
+- **ČHMÚ masked** jako druhý zdroj meteoradaru — plnou barvou jen srážky, které
+  dopadají na zem. Přepíná se na webu bez restartu.
+- **Tři WiFi sítě.** Jdou zapsat i mimo dosah; při startu se zkusí nejsilnější
+  dosažitelná, po minutě výpadku i ostatní uložené.
+- **Home Assistant** — `http://espd35meteoradar.local/api/ha` vrací JSON
+  pro integraci RESTful; na nové záložce je hotový blok `configuration.yaml`.
+  Ve výchozím stavu vypnuto. **Nevyzkoušeno se skutečným Home Assistantem.**
+- Stavová stránka ukazuje bouřku, letadla poblíž a skutečně zobrazenou
+  obrazovku (i když na ni přepnulo střídání nebo upozornění).
+
+### Změněno (z 0.8.x)
+
+- **Šetrnější k přetíženému adsb.fi** (0.8.4): každá další chyba v řadě
+  zdvojnásobí pauzu (10 s … 5 min) pro všechny, kdo se ptají; na 429 a 5xx se
+  v témže pokusu znovu neptá a `Retry-After` se respektuje.
+- **Stará letadla nevypadají jako živá** (0.8.4): po minutě bez dat zešednou
+  a nahoře je napsané, jak jsou stará; po deseti minutách zmizí. Ze starých
+  dat se nespustí ani upozornění.
+- **Výroba se načte i při velkém zpoždění zdroje** (0.8.3): když v posledních
+  4 hodinách nic není, zkusí se 12 a 36 hodin.
+- Při chybě HTTP se do sériového výpisu napíše i adresa a začátek odpovědi.
+
+### Přidáno (jen ESPD-3.5)
+
+- **Slovenčina.** Na webu v Poloha a displej → Jazyk; přepíná displej i webové
+  nastavení, změna se na displeji projeví hned po uložení. Displej má
+  slovenské texty s diakritikou i bez ní (pro pixelové písmo), dny a měsíce
+  („Pi 6. novembra“), pyl i kvalitu ovzduší. Webová stránka je dál psaná česky
+  a slovensky se překládá sama ze slovníku v `WebPage.h`; texty, které ve
+  slovníku nejsou, zůstanou česky. Vyhledávání města vrací názvy ve zvoleném
+  jazyce. Stavové zprávy zdrojů dat (záložka Stav) zůstávají česky.
+- Největší řezy vyhlazeného písma nemají slovenská písmena ä, ľ, ĺ, ô, ŕ;
+  místo vynechání se nakreslí bez diakritiky.
+- Texty psané přímo v kódu jdou přes makro `LT()` (čeština / slovenčina,
+  s diakritikou i bez), které nahradilo `CZT()`.
+
+### Změněno (jen ESPD-3.5)
+
+- **Webové nastavení je přehlednější:**
+  - každé pole má vlastní popisek s jednotkou (dřív „Odraz aspoň (dBZ) / do
+    vzdálenosti (km)“ nad dvěma poli bez rozlišení);
+  - nastavení vypnuté funkce (posun proti slunci, bouřka, výhled z okna,
+    letadlo poblíž, Home Assistant) se ukážou až po jejím zapnutí;
+  - „Meteoradar jen při bouřce“ je v kartě Meteoradar, „Letadlo poblíž“ na
+    záložce Letadla vedle Výhledu z okna; karta „Chytřejší střídání“ zmizela;
+  - Uložit nastavení není na záložkách Stav, WiFi a Správa, které mají
+    vlastní tlačítka;
+  - u barev výšek jsou skutečné rozsahy („3–10 tis. ft“), mění se při psaní;
+    čtyři hranice jsou v jedné řadě i na telefonu;
+  - nápovědy mají jednu větu, zbytek je pod „Více“.
+- **Směr okna = orientace radaru.** „Nahoře na radaru je“ a „Okno míří na“
+  byla dvě nastavení téhož a mohla si odporovat. Výhled z okna teď bere směr
+  z orientace radaru (i když se mění tlačítky na displeji); klíč `windowAz`
+  se už neukládá a v záloze se ignoruje.
+- **Heslo správce:** pole „Heslo správce“ slouží jen k povolení akcí; nové
+  heslo má vlastní kartu a koncový bod `/api/password`, který chce současné
+  heslo. Dřív se nové heslo posílalo s každým Uložit z téhož pole — překlep
+  v hesle pro reset se tak uložil jako nové heslo a heslo šlo změnit bez
+  znalosti starého.
+- **Odstraněn `OTA.cpp`** (a `OTA.h`, `OTA_IDLE_MS`). Soubor se od 0.4.0
+  nevolal, ale pořád vtahoval knihovnu ElegantOTA, takže bez ní překlad
+  končil chybou.
+
+### Opraveno (jen ESPD-3.5)
+
+- Obrazovka průběhu aktualizace firmwaru byla jen česky.
+
+- **Legenda výšek letadel byla vždy ve stopách**, i s metrickými jednotkami.
+  Teď se řídí nastavením: „FL x1000ft“ s hranicemi v tisících stop, nebo
+  „výška km“ s hranicemi v kilometrech (0.9 / 3 / 6.1 / 9.1). Displej se po
+  přepnutí jednotek na webu hned překreslí. Na webu se podle téhož
+  zaškrtávátka přepíná i nastavení barev (hranice v km, popisky „3–6,1 km“)
+  a filtr výšek (m / ft); hodnoty v polích se při přepnutí přepočítají.
+  Deska dál ukládá stopy; hodnota, na kterou uživatel nesáhl, se uloží
+  přesně původní, takže Uložit v metrických jednotkách hranice neposouvá.
+- **Názvy letadel kolidovaly s ikonami**, hlavně u vybraného letadla:
+  popisek šel vždy 16 px pod střed, ale velká letadla (A380, B747, nákladní)
+  mají ikonu do 22 px a kroužek vybraného letadla poloměr 17 px. Odstup
+  se teď počítá ze skutečné velikosti ikony (`PlaneIcon_Radius`), popisek
+  se nesmí překrývat s ikonou žádného letadla a když pod ikonou není místo,
+  zkusí se nad ní, vpravo a vlevo. Vybrané letadlo dostane místo pro popisek
+  první a kreslí se navrch.
+- **Radar letadel:** při upozornění na letadlo poblíž a při ztrátě signálu
+  zasahoval řádek „v okně 4,0 km“ / „signál ztracen“ do popisku „Typ“. Teď je
+  místo ICAO kódu pod volačkou. Popisek letadla u spodního okraje mapy se
+  kreslí nad ikonu, ne mimo displej.
+- **Webové nastavení:** nápovědy pod poli měly stejnou barvu a velikost jako
+  popisky (CSS selektor `.row .hint` neseděl na `<div class="row hint">`).
+
+- **Po restartu watchdogem deska zůstala na QR kódu s výběrem WiFi**, ačkoli
+  uloženou síť měla. Při pádu deska routeru neohlásí odpojení a router ji pak
+  chvíli odmítá; jeden 12s pokus nestačil. Teď se rádio před připojením uvede
+  do výchozího stavu a uložené sítě se zkoušejí ve třech kolech (další kola
+  čekají 20 s). Když ani pak nic, ukáže se portál jako dřív — a pokud se
+  k němu do **30 minut** nikdo nepřipojí, deska se restartuje a zkusí uložené
+  sítě znovu (`WIFI_PORTAL_RESTART_MS` v `Config.h`, 0 = vypnuto). Bez uložené
+  sítě se nerestartuje.
+- **Překlad s ESP32 core 3.3:** lokální konstanta `HALF_PI` v `UI.cpp`
+  kolidovala se stejnojmenným makrem z `Arduino.h`.
+
+### Opraveno (z 0.8.x)
+
+- **Legenda meteoradaru měla špatné hodnoty u čtyř nižších barev** — podle
+  škály ČHMÚ je modrá 12 dBZ, zelená 24, žlutá 36 a oranžová 44.
+- **Názvy měst na meteoradaru jsou čitelné i nad srážkami** (0.8.1): nad
+  světlým pozadím se popisek nakreslí černě se světlým okrajem.
+- Čas snímku ČHMÚ se převádí podle data snímku, ne podle aktuálních hodin.
+
+### Přidáno
+
+- **Cena elektřiny.** Nová obrazovka se spotovou cenou z denního trhu OTE
+  (přes spotovaelektrina.cz, zdarma a bez registrace). Vlevo je den jako
+  prstenec — půlnoc nahoře, 96 čtvrthodin od zelené po červenou, ručička na
+  probíhající čtvrthodině. Vpravo velké číslo s cenou právě teď v Kč/kWh,
+  pod ním nejlevnější a nejdražší blok dne. Klepnutí na prstenec vypíše
+  vybranou čtvrthodinu, klepnutí doprostřed nebo na pravý panel (i swipe)
+  přepne dnes/zítra. Zítřek vychází kolem 14:00.
+- **Výroba elektřiny.** Druhá nová obrazovka: z čeho se právě vyrábí (ENTSO-E
+  přes energy-charts.info). Prstenec podílů, uprostřed podíl OZE, vpravo
+  legenda seřazená podle podílu, spotřeba, vývoz/dovoz a čas vzorku — data
+  chodí se zpožděním 1–2 hodiny. Zemi lze zvolit, včetně celé Evropy.
+- **Záložka Energie ve webovém nastavení.** Přirážka k burzovní ceně
+  v Kč/MWh (s přepočtem na Kč/kWh hned pod polem), DPH a země pro výrobu.
+  Dokud je přirážka i DPH nula, displej ukazuje čistou burzu a napíše to.
+- Obě energetické obrazovky jsou po aktualizaci **vypnuté**; zapínají se na
+  záložce Obrazovky. Dokud jsou vypnuté, deska si o data neřekne. Po přesunu
+  polohy mimo ČR (cena) nebo mimo Evropu (výroba) se jednou samy vypnou.
+- **Legendu meteoradaru jde skrýt** (záložka Obrazovky → Meteoradar).
+  Vypnutím zmizí i místo, které si legenda rezervovala pro popisky měst.
+- Na stavové stránce přibyl stav ceny, výroby a **časové pásmo**.
+
+### Změněno
+
+- **Předpověď se čte po řádcích**: „nyní“, dvě tříhodinová okna popsaná časem
+  (např. `14-17h`), pod nimi dnešek a další čtyři dny s datem. Okno sečte
+  srážky, vezme nejsilnější vítr a nejvýraznější ikonu. Vítr se ukazuje až
+  od 12 km/h, stejně jako srážky jen když nějaké jsou.
+- **Čas se řídí polohou.** Posun proti UTC chodí spolu s předpovědí z Open-Meteo
+  (`TimeZone.*`); v Česku zůstává zkompilované pravidlo s letním časem.
+  Denní minima a maxima se nově počítají přes místní dny, ne přes UTC.
+- **Na displeji je `°C` místo `degC`.** Vestavěný font znak má na 0xF8.
+- `Net_GetString()` čte tělo přes sink (chunked se dekóduje) do bufferu v PSRAM
+  se stropem `NET_MAX_TEXT` a zvládá i `http://`. Poloha podle IP (ip-api.com)
+  jde nově touto cestou místo vlastního `HTTPClient::getString()`.
+- Sedm obrazovek místo pěti. Poslední obrazovka se ukládá pod klíčem `scr3`,
+  starší `scr2` se jednorázově převede (Nastavení bylo 4, nově 6).
+- Prstence se vyplňují po pixelech (`UI_FillRing`), bez černých teček mezi
+  radiálními čarami.
+
+### Opraveno
+
+- **Po neúspěchu se výpis ČHMÚ stahoval prakticky pořád dokola.** Nový pokus
+  je až za minutu (`METEO_RETRY_MS`), po úspěchu za pět (`METEO_PERIOD_MS`).
+- **Meteoradar při obnově nezčerná** — zůstane poslední snímek s malou žlutou
+  poznámkou. Když stažení selže, snímky se nezahodí a overlay napíše, že jde
+  o starší data.
+- **Na velkých rozsazích u hranic se poloha posouvala.** Výřez ze snímku ČHMÚ
+  se ořezával na okraj, takže přestal být vystředěný na uživatele, ale křížek
+  se kreslil doprostřed. Výřez se už neořezává, chybějící část je černá.
+- **Snímek meteoradaru se kontroluje na PNG signaturu** — chybová stránka
+  s HTTP 200 se už nedostane do dekodéru.
+- Radar letadel přijme i pole `aircraft` (servery odvozené z ADSBexchange)
+  a squawk poslaný jako číslo, takže nouzový kód nepropadne.
+
+---
+
 ## [0.4.2]
 
 ### Opraveno
