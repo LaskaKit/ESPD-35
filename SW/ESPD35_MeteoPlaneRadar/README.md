@@ -68,7 +68,7 @@ Nepotřebuješ Arduino IDE ani nic instalovat. Stačí prohlížeč.
 **Potřebuješ:** Chrome nebo Edge (Firefox a Safari to neumí) a USB‑C kabel,
 který vede i data — ne jen nabíjecí.
 
-1. Otevři **webový flasher** (odkaz na stránce projektu).
+1. Otevři **webový flasher** esp32flasher.chiptron.cz.
 2. Připoj desku do počítače kabelem ke konektoru označenému **„USB"**.
 3. Klikni na **Connect** a v seznamu vyber port desky.
 4. Klikni na **Install** a počkej. Deska se sama restartuje.
